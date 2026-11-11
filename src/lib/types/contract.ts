@@ -32,6 +32,7 @@ export interface Message {
   sender: UserSummary;
   client_message_id: string;
   text: string;
+  image?: { url: string; content_type: string; byte_size: number; width: number; height: number };
   created_at: string;
 }
 
@@ -79,6 +80,7 @@ export interface PendingMessage {
   room_id: string;
   client_message_id: string;
   text: string;
+  image?: File;
   created_at: string;
   status: PendingStatus;
   error_code?: string;

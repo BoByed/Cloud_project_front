@@ -33,6 +33,7 @@
 ระบบรองรับการเชื่อมต่อกับ `chat-api` 2 รูปแบบอย่างราบรื่น:
 
 ### 1) โหมดทดสอบ Local (Local Multi-User Demo - M1/M2)
+- รัน Vite ด้วย `npm run dev` แล้วเปิด `http://localhost:5173/?dev=1` เพื่อแสดงบัญชีทดสอบและเมนูเครื่องมือทดสอบที่ด้านล่างของรายการแชท เครื่องมือเหล่านี้ไม่รวมอยู่ใน production build
 - Seeded demo users ของระบบ:
   - **Demo A**: `11111111-1111-4111-8111-111111111111`
   - **Demo B**: `22222222-2222-4222-8222-222222222222`
@@ -41,7 +42,7 @@
   - Frontend จะตั้ง Cookie `local_test_user_id=<user_id>` ซึ่งทั้ง Vite dev proxy, Nginx container, และ Go backend จะส่งต่อไปยัง WebSocket handshake `/api/v1/ws` ทำให้สามารถต่อ WebSocket และคุยตอบโต้แบบเรียลไทม์ได้ทันที
 
 ### 2) โหมด Production (AWS Cognito OAuth2 & Sessions - M3+)
-- เมื่อคลิก "เข้าสู่ระบบด้วย AWS Cognito":
+- เมื่อคลิก "เข้าสู่ระบบ":
   - เบราว์เซอร์จะ Redirect ไปที่ `/auth/login` (Cognito Hosted UI)
   - หลัง Authentication สำเร็จ Cognito callback จะส่งกลับมาที่ `/auth/callback` ซึ่งเซิร์ฟเวอร์จะตั้ง Secure, HttpOnly cookie (`__Host-chat_session`)
   - Frontend จะดึง Session และ CSRF Token ผ่าน `GET /api/v1/session`
@@ -75,7 +76,7 @@ docker compose up --build
    npm install
    npm run dev
    ```
-3. เข้าใช้งานที่ `http://localhost:5173` (Vite จะทำ Reverse Proxy คำขอ `/api`, `/auth`, `/health`, และ `/api/v1/ws` ไปยัง `http://localhost:8080` พร้อม Forward User identity อัตโนมัติ)
+3. เข้าใช้งานที่ `http://localhost:5173` (Vite จะทำ Reverse Proxy คำขอ `/api`, `/auth`, `/health`, และ `/api/v1/ws` ไปยัง `http://localhost:8080`) เพิ่ม `?dev=1` เมื่อต้องการใช้บัญชีและเครื่องมือทดสอบ
 
 ---
 

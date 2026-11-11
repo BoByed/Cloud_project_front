@@ -202,6 +202,7 @@ export async function loadRoomState(
           sender: m.sender,
           client_message_id: m.client_message_id,
           text: m.text,
+          image: m.image,
           created_at: m.created_at
         }));
 
@@ -277,6 +278,8 @@ export async function saveMessagesAndCursorAtomic(
       for (const msg of messages) {
         const record: StoredMessageRecord = {
           ...msg,
+          sender: { ...msg.sender },
+          image: msg.image ? { ...msg.image } : undefined,
           user_id: userId,
           room_id: roomId
         };
@@ -311,7 +314,7 @@ export async function savePendingSend(item: PendingMessage): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
       const tx = dbInstance!.transaction(['pending_sends'], 'readwrite');
-      tx.objectStore('pending_sends').put(item);
+      tx.objectStore('pending_sends').put({ ...item });
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     } catch (err) {

@@ -1,176 +1,100 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { chatEngine } from './lib/services/chat-engine.svelte.js';
+  import { localDemoEnabled } from './lib/services/local-demo.js';
+  import BrandMark from './lib/components/BrandMark.svelte';
   import Sidebar from './lib/components/Sidebar.svelte';
   import ChatHeader from './lib/components/ChatHeader.svelte';
   import MessageList from './lib/components/MessageList.svelte';
   import MessageComposer from './lib/components/MessageComposer.svelte';
-  import DevInspectorDrawer from './lib/components/DevInspectorDrawer.svelte';
+  import RoomDialog from './lib/components/RoomDialog.svelte';
   import LoginScreen from './lib/components/LoginScreen.svelte';
 
+  let localDemo = $state(false);
   let isDevDrawerOpen = $state(false);
+  let showRoomList = $state(true);
+  let roomDialog = $state<'new' | 'manage' | null>(null);
+  const loadDevDrawer = import.meta.env.DEV ? () => import('./lib/components/DevInspectorDrawer.svelte') : null;
 
   onMount(() => {
-    // If not initialized yet, initialize the engine
+    localDemo = localDemoEnabled();
     if (!chatEngine.session && chatEngine.authLoading) {
       chatEngine.initialize();
     }
   });
+
+  function closeDevDrawer() {
+    isDevDrawerOpen = false;
+  }
 </script>
 
 <div class="app-root">
-  <!-- Storage Degraded Warning Banner (Section 2) -->
-  {#if chatEngine.storageDegraded}
-    <div class="degraded-banner" role="alert">
-      <span>⚠️ <strong>คำเตือน:</strong> เบราว์เซอร์บล็อก IndexedDB ข้อมูลข้อความจะถูกเก็บในหน่วยความจำชั่วคราวและอาจสูญหายเมื่อรีเฟรชหน้า</span>
-    </div>
-  {/if}
-
   {#if chatEngine.authLoading}
-    <div class="loading-screen">
-      <div class="spin-icon loader-spinner">💬</div>
-      <p>กำลังเตรียมความพร้อมระบบแชท...</p>
+    <div class="loading-screen" role="status">
+      <BrandMark size={40} />
+      <p>กำลังเปิด Cloud Chat…</p>
     </div>
   {:else if !chatEngine.session}
-    <LoginScreen />
+    <LoginScreen {localDemo} />
   {:else}
-    <!-- Main Messenger 2-Column App Layout -->
-    <div class="messenger-container">
-      <!-- Left Panel: Sidebar -->
-      <Sidebar onOpenDevDrawer={() => isDevDrawerOpen = !isDevDrawerOpen} />
+    {#if chatEngine.storageDegraded}
+      <div class="degraded-banner" role="status">
+        เบราว์เซอร์บันทึกข้อความที่ยังไม่ได้ส่งไม่ได้ หากโหลดหน้าใหม่อาจต้องพิมพ์อีกครั้ง
+      </div>
+    {/if}
 
-      <!-- Right Panel: Active Chat Area -->
-      <main class="chat-main" aria-label="ห้องสนทนาหลัก">
+    <div class="messenger-container">
+      <div class:show-room-list={showRoomList} class="sidebar-panel">
+        <Sidebar
+          onNewRoom={() => roomDialog = 'new'}
+          onOpenDevDrawer={localDemo ? () => isDevDrawerOpen = true : undefined}
+          onSelectRoom={() => showRoomList = false}
+          onLogout={() => { showRoomList = true; closeDevDrawer(); }}
+        />
+      </div>
+
+      <main class:show-room-list={showRoomList} class="chat-main" aria-label="ห้องสนทนา">
         {#if chatEngine.activeRoom}
-          <ChatHeader
-            {isDevDrawerOpen}
-            onToggleDevDrawer={() => isDevDrawerOpen = !isDevDrawerOpen}
-          />
+          <ChatHeader onShowRooms={() => showRoomList = true} onManage={() => roomDialog = 'manage'} />
           <MessageList />
           <MessageComposer />
         {:else}
           <div class="no-room-selected">
-            <div class="empty-icon">
-              <svg viewBox="0 0 36 36" width="72" height="72" fill="none">
-                <defs>
-                  <linearGradient id="empty-m-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stop-color="#0084ff" />
-                    <stop offset="60%" stop-color="#0099ff" />
-                    <stop offset="100%" stop-color="#a033ff" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d="M18 2C9.163 2 2 8.716 2 17c0 4.717 2.33 8.914 6 11.667V34l5.127-2.82c1.554.43 3.193.667 4.873.667 8.837 0 16-6.716 16-15S26.837 2 18 2z"
-                  fill="url(#empty-m-grad)"
-                />
-                <path
-                  d="M10 20.5l5.5-5.8 4 4 6.5-6.2-5.5 5.8-4-4-6.5 6.2z"
-                  fill="#ffffff"
-                />
-              </svg>
-            </div>
-            <h2 class="empty-title">เลือกห้องสนทนาเพื่อเริ่มคุย</h2>
-            <p class="empty-subtitle">
-              เลือกห้องแชทเดี่ยว (DM) หรือกลุ่ม (Group) ทางแผงด้านซ้าย เพื่อดูข้อความและสนทนาแบบเรียลไทม์
-            </p>
+            <BrandMark size={48} />
+            <h2>ห้องสนทนาของคุณ</h2>
+            <p>เลือกห้องจากรายการเพื่อเปิดข้อความ</p>
+            <button type="button" class="back-to-list" onclick={() => showRoomList = true}>กลับไปยังรายการแชท</button>
           </div>
         {/if}
       </main>
 
-      <!-- Right Side Dev Drawer (M1/M2 Simulator) -->
-      {#if isDevDrawerOpen}
-        <DevInspectorDrawer onClose={() => isDevDrawerOpen = false} />
+      {#if roomDialog}
+        <RoomDialog mode={roomDialog} room={chatEngine.activeRoom} onClose={() => roomDialog = null} onOpened={() => showRoomList = false} />
+      {/if}
+
+      {#if localDemo && loadDevDrawer && isDevDrawerOpen}
+        {#await loadDevDrawer() then { default: DevInspectorDrawer }}
+          <DevInspectorDrawer onClose={closeDevDrawer} />
+        {/await}
       {/if}
     </div>
   {/if}
 </div>
 
 <style>
-  .app-root {
-    height: 100vh;
-    width: 100vw;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background-color: var(--bg-app);
-  }
+  .app-root { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  .degraded-banner { padding: 8px 16px; background: var(--item-active); color: var(--text-primary); text-align: center; flex-shrink: 0; }
+  .loading-screen, .no-room-selected { flex: 1; display: grid; align-content: center; justify-items: center; gap: 12px; padding: 24px; text-align: center; color: var(--text-secondary); }
+  .no-room-selected h2 { color: var(--text-primary); }
+  .messenger-container { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+  .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg-app); }
+  .sidebar-panel { flex-shrink: 0; }
+  .back-to-list { display: none; }
 
-  .degraded-banner {
-    background-color: #fff3cd;
-    color: #856404;
-    padding: 8px 16px;
-    font-size: 12px;
-    text-align: center;
-    border-bottom: 1px solid #ffeeba;
-    flex-shrink: 0;
-    z-index: 1000;
-  }
-
-  .loading-screen {
-    height: 100%;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    color: var(--text-secondary);
-    font-size: 14px;
-  }
-
-  .loader-spinner {
-    font-size: 36px;
-  }
-
-  .messenger-container {
-    height: 100%;
-    width: 100%;
-    display: flex;
-    overflow: hidden;
-  }
-
-  .chat-main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-width: 0;
-    position: relative;
-    background-color: var(--bg-surface);
-  }
-
-  .no-room-selected {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 40px;
-    text-align: center;
-    color: var(--text-secondary);
-    user-select: none;
-  }
-
-  .empty-icon {
-    margin-bottom: 20px;
-    animation: float 3s ease-in-out infinite;
-  }
-
-  @keyframes float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
-  }
-
-  .empty-title {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 8px;
-  }
-
-  .empty-subtitle {
-    font-size: 14px;
-    max-width: 380px;
-    line-height: 1.5;
+  @media (max-width: 700px) {
+    .sidebar-panel { display: none; width: 100%; }
+    .sidebar-panel.show-room-list { display: block; }
+    .chat-main.show-room-list { display: none; }
+    .back-to-list { display: block; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--brand-accent); }
   }
 </style>

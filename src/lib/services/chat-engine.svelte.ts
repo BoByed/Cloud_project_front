@@ -27,6 +27,7 @@ import {
   savePendingSend
 } from '../storage/indexeddb.js';
 import { ApiError, httpClient } from './http-client.js';
+import { localDemoEnabled } from './local-demo.js';
 import { wsClient, type WsState } from './ws-client.js';
 
 export interface LogEntry {
@@ -43,6 +44,7 @@ export class ChatEngine {
   authLoading: boolean = $state(true);
   authError: string | null = $state(null);
   storageDegraded: boolean = $state(false);
+  notificationSoundEnabled: boolean = $state(true);
 
   rooms: Room[] = $state([]);
   roomsNextCursor: string | null = $state(null);
@@ -75,6 +77,16 @@ export class ChatEngine {
   private simulatedDroppedIds = new Set<string>();
   private periodicSyncTimer: ReturnType<typeof setInterval> | null = null;
   private isVisibilityListenerAttached = false;
+  private unreadTabMessages = new Set<string>();
+  private originalTabTitle: string | null = null;
+  private notificationRoomSequences = new Map<string, string>();
+  private notificationMonitorGeneration = 0;
+  private notificationScanRunning = false;
+  private hiddenSince: number | null = null;
+  private audioContext: AudioContext | null = null;
+  private soundUnlockAttached = false;
+  private lastNotificationSoundAt = -Infinity;
+  private alertedMessageIds = new Set<string>();
 
   constructor() {
     this.setupWsCallbacks();
@@ -118,6 +130,7 @@ export class ChatEngine {
   public async initialize(): Promise<void> {
     this.authLoading = true;
     this.authError = null;
+    this.setupNotificationSound();
 
     try {
       // 1. Initialize IndexedDB storage
@@ -129,11 +142,10 @@ export class ChatEngine {
         this.addLog('info', 'IndexedDB (cloud_chat_v1) initialized.');
       }
 
-      // 2. Fetch mock dev users for local demo switching
-      try {
+      if (localDemoEnabled()) {
         this.devUsers = await httpClient.fetchDevUsers();
-      } catch (err) {
-        this.addLog('error', `Could not fetch dev users: ${err instanceof Error ? err.message : String(err)}`);
+      } else if (import.meta.env.DEV) {
+        httpClient.setActiveLocalUserId(null);
       }
 
       // 3. Check current authentication session
@@ -142,7 +154,10 @@ export class ChatEngine {
         this.session = session;
         this.addLog('info', `Session verified for user ${session.user.display_name} (${session.user.user_id})`);
         await this.onLoginSuccess();
-      } catch {
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 401) {
+          this.authError = error instanceof Error ? error.message : 'Session check failed';
+        }
         // Not logged in or expired session
         this.session = null;
         this.addLog('info', 'No active user session. Please log in.');
@@ -171,16 +186,10 @@ export class ChatEngine {
     } catch (err) {
       this.authError = err instanceof Error ? err.message : 'Dev login failed';
       this.addLog('error', `Dev login error: ${this.authError}`);
+      throw err;
     } finally {
       this.authLoading = false;
     }
-  }
-
-  /**
-   * Redirects to the AWS Cognito OAuth2 login route.
-   */
-  public loginWithCognitoRedirect(): void {
-    window.location.href = '/auth/login';
   }
 
   /**
@@ -191,7 +200,9 @@ export class ChatEngine {
     try {
       await httpClient.logout(allDevices);
     } catch (err) {
-      console.warn('Logout request failed:', err);
+      this.authError = err instanceof Error ? err.message : 'Logout failed';
+      this.addLog('error', `Logout failed: ${this.authError}`);
+      throw err;
     }
 
     if (userId) {
@@ -202,6 +213,9 @@ export class ChatEngine {
       }
     }
 
+    this.clearTabNotifications();
+    this.alertedMessageIds.clear();
+    this.stopNotificationMonitor();
     this.stopPeriodicSync();
     wsClient.disconnect();
 
@@ -220,10 +234,38 @@ export class ChatEngine {
     this.syncingByRoom = {};
     this.liveBuffer = {};
     this.bufferingRoomIds = {};
+    this.simulateTimeoutOnSend = false;
+    httpClient.simulateDropAfterSend = false;
     this.workerPaused = false;
     this.outboxBacklogCount = 0;
 
     this.addLog('info', allDevices ? 'Logged out from all devices.' : 'Logged out from this device.');
+  }
+
+  public async refreshRooms(selectRoomId?: string): Promise<void> {
+    if (!this.session) return;
+    const items: Room[] = [];
+    const targetRoomId = selectRoomId ?? this.activeRoomId;
+    let cursor: string | null = null;
+    do {
+      const page: { items: Room[]; next_cursor: string | null } = await httpClient.fetchRooms(50, cursor);
+      items.push(...page.items);
+      cursor = page.next_cursor;
+    } while (cursor && targetRoomId && !items.some(room => room.room_id === targetRoomId));
+    this.rooms = items;
+    this.roomsNextCursor = cursor;
+    if (selectRoomId && items.some(room => room.room_id === selectRoomId)) {
+      await this.selectRoom(selectRoomId);
+    } else if (this.activeRoomId && !items.some(room => room.room_id === this.activeRoomId) && !cursor) {
+      wsClient.unsubscribeRoom(this.activeRoomId);
+      this.activeRoomId = null;
+    }
+  }
+
+  public forgetRoom(roomId: string): void {
+    wsClient.unsubscribeRoom(roomId);
+    this.rooms = this.rooms.filter(room => room.room_id !== roomId);
+    if (this.activeRoomId === roomId) this.activeRoomId = null;
   }
 
   /**
@@ -440,7 +482,7 @@ export class ChatEngine {
    * Validates text, generates client_message_id, stores in pending_sends in IDB,
    * fires HTTP POST, reconciles with live WebSocket events, and handles retryable vs permanent errors.
    */
-  public async sendMessage(text: string): Promise<void> {
+  public async sendMessage(text: string, image?: File): Promise<void> {
     if (!this.session || !this.activeRoomId) {
       throw new Error('Cannot send message: no active room or session');
     }
@@ -456,7 +498,7 @@ export class ChatEngine {
 
     // 1. Text validation per Section 3
     const validation = validateMessageText(text);
-    if (!validation.valid) {
+    if (image ? text.includes('\u0000') || validation.byteLength > 4096 : !validation.valid) {
       const err = validation.reason || 'Invalid message text';
       this.addLog('error', `Message validation error: ${err}`);
       throw new Error(err);
@@ -471,6 +513,7 @@ export class ChatEngine {
       room_id: roomId,
       client_message_id: clientMessageId,
       text,
+      image,
       created_at: new Date().toISOString(),
       status: 'sending',
       attempts: 1
@@ -489,7 +532,9 @@ export class ChatEngine {
     }
 
     try {
-      const resp = await httpClient.sendMessageHttp(roomId, clientMessageId, text);
+      const resp = image
+        ? await httpClient.sendImageMessageHttp(roomId, clientMessageId, image, text)
+        : await httpClient.sendMessageHttp(roomId, clientMessageId, text);
       const confirmedMsg = resp.message;
 
       this.addLog(
@@ -554,7 +599,9 @@ export class ChatEngine {
     this.simulatedDroppedIds.delete(clientMessageId);
 
     try {
-      const resp = await httpClient.sendMessageHttp(roomId, clientMessageId, item.text, true);
+      const resp = item.image
+        ? await httpClient.sendImageMessageHttp(roomId, clientMessageId, item.image, item.text, true)
+        : await httpClient.sendMessageHttp(roomId, clientMessageId, item.text, true);
       const confirmedMsg = resp.message;
 
       this.addLog(
@@ -620,18 +667,30 @@ export class ChatEngine {
 
     const roomId = this.activeRoomId;
     const testId = generateUuid();
-    const testText = `[Concurrent Idempotency Demo] 20 parallel requests at ${new Date().toLocaleTimeString()}`;
+    const testText = `[Concurrent Idempotency Demo] ${count} parallel requests at ${new Date().toLocaleTimeString()}`;
 
     this.addLog(
       'http',
       `Launching ${count} concurrent POST requests with single client_message_id (${testId.slice(0, 8)})...`
     );
 
-    const promises = Array.from({ length: count }, () =>
-      httpClient.sendMessageHttp(roomId, testId, testText, true)
-    );
+    const promises = Array.from({ length: count }, async () => {
+      for (let attempt = 0; attempt < 30; attempt++) {
+        try {
+          return await httpClient.sendMessageHttp(roomId, testId, testText, true);
+        } catch (err) {
+          if (!(err instanceof ApiError) || err.status !== 429 || attempt === 29) throw err;
+          const delay = Math.max(1, err.retryAfterSeconds ?? 1) * 1000 + Math.random() * 1000;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+      throw new Error('Idempotency test exceeded retry limit');
+    });
 
-    const results = await Promise.all(promises);
+    const settled = await Promise.allSettled(promises);
+    const failure = settled.find((result) => result.status === 'rejected');
+    if (failure?.status === 'rejected') throw failure.reason;
+    const results = settled.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
 
     let created201 = 0;
     let replayed200 = 0;
@@ -655,6 +714,10 @@ export class ChatEngine {
       uniqueMessageIds: messageIds.size,
       seq: finalSeq
     };
+
+    if (created201 !== 1 || replayed200 !== count - 1 || messageIds.size !== 1) {
+      throw new Error('Idempotency test returned inconsistent message results');
+    }
 
     this.addLog(
       'info',
@@ -836,15 +899,8 @@ export class ChatEngine {
    * Forces a simulated WebSocket disconnection with code 1001 or specified code via backend chaos endpoint.
    */
   public async simulateWsDisconnect(code = 1001): Promise<void> {
-    this.addLog('ws', `Simulating server WebSocket disconnect with close code ${code}...`);
-    try {
-      await httpClient.triggerDevChaos({
-        action: 'disconnect_ws',
-        code
-      });
-    } catch {
-      wsClient.forceDisconnect(4000);
-    }
+    this.addLog('ws', 'Disconnecting the browser WebSocket to test recovery.');
+    wsClient.forceDisconnect(4000);
   }
 
   /**
@@ -909,6 +965,8 @@ export class ChatEngine {
       },
 
       onAuthExpired: () => {
+        this.clearTabNotifications();
+        this.stopNotificationMonitor();
         this.session = null;
         this.addLog('error', 'Session expired via WebSocket. Please log in again.');
       },
@@ -953,6 +1011,7 @@ export class ChatEngine {
       if (err instanceof ApiError && (err.status === 401 || err.code === 'UNAUTHENTICATED')) {
         this.addLog('error', 'Session expired during WebSocket reconnect — stopping retries');
         wsClient.disconnect();
+        this.clearTabNotifications();
         this.session = null;
       }
     }
@@ -973,6 +1032,8 @@ export class ChatEngine {
     if (userId && message.sender.user_id === userId && message.client_message_id) {
       this.removePending(roomId, message.client_message_id);
     }
+
+    this.notifyTabOfMessage(roomId, message);
 
     // 2. Buffer if currently performing recovery sync OR awaiting subscribe confirmation (Gap F1)
     if (this.syncingByRoom[roomId] || this.bufferingRoomIds[roomId]) {
@@ -1058,10 +1119,10 @@ export class ChatEngine {
     }
 
     // Refresh dev chaos status
-    await this.refreshDevChaosStatus();
 
-    // Start periodic 15s background sync
+    // Start periodic recovery and room-list checks.
     this.startPeriodicSync();
+    this.startNotificationMonitor();
 
     // Select first room if available
     if (this.rooms.length > 0 && !this.activeRoomId) {
@@ -1072,6 +1133,7 @@ export class ChatEngine {
   private startPeriodicSync(): void {
     this.stopPeriodicSync();
     this.periodicSyncTimer = setInterval(() => {
+      void this.scanRoomsForNotifications(this.notificationMonitorGeneration);
       if (document.visibilityState === 'visible' && this.activeRoomId && this.session) {
         this.syncRoom(this.activeRoomId);
       }
@@ -1085,11 +1147,168 @@ export class ChatEngine {
     }
   }
 
+  private startNotificationMonitor(): void {
+    this.stopNotificationMonitor();
+    this.hiddenSince = document.visibilityState === 'hidden' ? httpClient.estimatedServerTime() - 1000 : null;
+    void this.scanRoomsForNotifications(this.notificationMonitorGeneration);
+  }
+
+  private stopNotificationMonitor(): void {
+    this.notificationMonitorGeneration++;
+    this.notificationRoomSequences.clear();
+    this.hiddenSince = null;
+  }
+
+  // Room-list sequence snapshots are only notification checkpoints, never recovery cursors.
+  private async scanRoomsForNotifications(generation: number): Promise<void> {
+    const userId = this.session?.user.user_id;
+    if (!userId || this.notificationScanRunning) return;
+    this.notificationScanRunning = true;
+    const isCurrent = () => generation === this.notificationMonitorGeneration && this.session?.user.user_id === userId;
+    const read = async <T>(request: () => Promise<T>): Promise<T> => {
+      for (let attempt = 0; ; attempt++) {
+        try { return await request(); }
+        catch (error) {
+          if (!(error instanceof ApiError) || error.status !== 429 || attempt >= 3 || !isCurrent()) throw error;
+          await new Promise(resolve => setTimeout(resolve, (error.retryAfterSeconds ?? 1) * 1000));
+          if (!isCurrent()) throw error;
+        }
+      }
+    };
+    try {
+      let cursor: string | null = null;
+      do {
+        const page: { items: Room[]; next_cursor: string | null } = await read(() => httpClient.fetchRooms(100, cursor));
+        if (!isCurrent()) return;
+        for (const room of page.items) {
+          if (!isCurrent()) return;
+          const previous = this.notificationRoomSequences.get(room.room_id);
+          if ((previous !== undefined || (document.visibilityState === 'hidden' && this.hiddenSince !== null)) &&
+              compareSeq(room.last_seq, previous ?? '0') > 0) {
+            // For a newly discovered room, ignore history from before this background period.
+            let after = previous ?? '0';
+            let hasMore = true;
+            while (hasMore) {
+              const response = await read(() => httpClient.fetchRoomSync(room.room_id, after, room.last_seq, 100));
+              if (!isCurrent()) return;
+              for (const message of response.items) {
+                if (previous !== undefined || (this.hiddenSince !== null && Date.parse(message.created_at) >= this.hiddenSince)) {
+                  this.notifyTabOfMessage(room.room_id, message);
+                }
+              }
+              if (response.has_more && compareSeq(response.next_after_seq, after) <= 0) {
+                throw new Error('Notification scan did not advance');
+              }
+              after = response.next_after_seq;
+              hasMore = response.has_more;
+            }
+          }
+          if (!isCurrent()) return;
+          this.notificationRoomSequences.set(room.room_id, room.last_seq);
+        }
+        cursor = page.next_cursor;
+      } while (cursor && isCurrent());
+    } catch (error) {
+      this.addLog('error', `Room notification check failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      this.notificationScanRunning = false;
+      // A new session may have started while the previous request was in flight.
+      if (generation !== this.notificationMonitorGeneration && this.session) {
+        void this.scanRoomsForNotifications(this.notificationMonitorGeneration);
+      }
+    }
+  }
+
+  private setupNotificationSound(): void {
+    if (this.soundUnlockAttached || typeof window === 'undefined') return;
+    this.soundUnlockAttached = true;
+    try { this.notificationSoundEnabled = localStorage.getItem('chat_notification_sound') !== 'off'; } catch { /* Storage is optional. */ }
+    const unlock = () => this.unlockNotificationAudio();
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('keydown', unlock);
+  }
+
+  public setNotificationSound(enabled: boolean): void {
+    this.notificationSoundEnabled = enabled;
+    try { localStorage.setItem('chat_notification_sound', enabled ? 'on' : 'off'); } catch { /* Storage is optional. */ }
+    if (enabled) this.unlockNotificationAudio();
+  }
+
+  private unlockNotificationAudio(): void {
+    if (!this.notificationSoundEnabled || typeof window === 'undefined') return;
+    try {
+      if (!this.audioContext) this.audioContext = new AudioContext();
+      if (this.audioContext.state === 'suspended') void this.audioContext.resume().catch(() => {});
+    } catch {
+      // Audio is optional and must not interrupt messaging.
+    }
+  }
+
+  private playNotificationSound(): void {
+    const context = this.audioContext;
+    if (!this.notificationSoundEnabled || !context || context.state !== 'running') return;
+    const now = context.currentTime;
+    if (now - this.lastNotificationSoundAt < 0.8) return;
+    this.lastNotificationSoundAt = now;
+    try {
+      const gain = context.createGain();
+      const tone = context.createOscillator();
+      tone.type = 'sine';
+      tone.frequency.setValueAtTime(740, now);
+      tone.frequency.setValueAtTime(988, now + 0.1);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.10, now + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
+      tone.connect(gain);
+      gain.connect(context.destination);
+      tone.onended = () => { tone.disconnect(); gain.disconnect(); };
+      tone.start(now);
+      tone.stop(now + 0.33);
+    } catch {
+      // Audio is optional and must not interrupt messaging.
+    }
+  }
+
+  private notifyTabOfMessage(roomId: string, message: Message): void {
+    if (typeof document === 'undefined' || !this.session ||
+        message.sender.user_id === this.session.user.user_id ||
+        this.alertedMessageIds.has(message.message_id) ||
+        (this.messagesByRoom[roomId] ?? []).some(item => item.message_id === message.message_id) ||
+        (this.liveBuffer[roomId] ?? []).some(item => item.message_id === message.message_id)) return;
+
+    this.alertedMessageIds.add(message.message_id);
+    if (this.alertedMessageIds.size > 1000) {
+      const oldest = this.alertedMessageIds.values().next().value;
+      if (oldest !== undefined) this.alertedMessageIds.delete(oldest);
+    }
+    this.playNotificationSound();
+
+    if (document.visibilityState !== 'hidden') return;
+    if (this.originalTabTitle === null) this.originalTabTitle = document.title;
+    this.unreadTabMessages.add(message.message_id);
+    document.title = `(${this.unreadTabMessages.size}) ${this.originalTabTitle}`;
+  }
+
+  private clearTabNotifications(): void {
+    if (typeof document !== 'undefined' && this.originalTabTitle !== null) {
+      document.title = this.originalTabTitle;
+    }
+    this.originalTabTitle = null;
+    this.unreadTabMessages.clear();
+  }
+
   private setupVisibilityListener(): void {
     if (this.isVisibilityListenerAttached || typeof document === 'undefined') return;
     this.isVisibilityListenerAttached = true;
 
     document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        this.hiddenSince = null;
+        this.clearTabNotifications();
+      } else {
+        this.hiddenSince = httpClient.estimatedServerTime() - 1000;
+      }
+      void this.scanRoomsForNotifications(this.notificationMonitorGeneration);
       if (document.visibilityState === 'visible' && this.activeRoomId && this.session) {
         this.addLog('sync', 'App tab became visible. Running immediate catch-up sync...');
         this.syncRoom(this.activeRoomId);

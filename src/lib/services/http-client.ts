@@ -12,6 +12,7 @@ import type {
   SyncResponse,
   UserSummary
 } from '../types/contract.js';
+import { localDemoEnabled } from './local-demo.js';
 
 export class ApiError extends Error {
   status: number;
@@ -44,7 +45,12 @@ export class ApiError extends Error {
 export class HttpClient {
   private csrfToken: string | null = null;
   private activeLocalUserId: string | null = null;
+  private serverClockOffsetMs: number | null = null;
   public simulateDropAfterSend = false;
+
+  public estimatedServerTime(): number {
+    return Date.now() + (this.serverClockOffsetMs ?? 0);
+  }
 
   public setCsrfToken(token: string | null): void {
     this.csrfToken = token;
@@ -54,7 +60,17 @@ export class HttpClient {
     return this.csrfToken;
   }
 
+  public async fetchImage(url: string): Promise<Blob> {
+    const headers = new Headers();
+    const userId = this.getActiveLocalUserId();
+    if (userId) headers.set('X-Local-Test-User-ID', userId);
+    const response = await fetch(url, { credentials: 'include', headers, cache: 'no-store' });
+    if (!response.ok) throw new Error(`Image request failed (${response.status})`);
+    return response.blob();
+  }
+
   public getActiveLocalUserId(): string | null {
+    if (!localDemoEnabled()) return null;
     if (typeof window !== 'undefined' && !this.activeLocalUserId) {
       try {
         this.activeLocalUserId = localStorage.getItem('local_test_user_id');
@@ -120,6 +136,12 @@ export class HttpClient {
         'NETWORK_ERROR',
         true
       );
+    }
+
+    const serverDate = response.headers.get('Date');
+    if (serverDate) {
+      const serverTime = Date.parse(serverDate);
+      if (Number.isFinite(serverTime)) this.serverClockOffsetMs = serverTime + 500 - Date.now();
     }
 
     // Handle 403 CSRF_FAILED with a single refresh attempt
@@ -231,13 +253,15 @@ export class HttpClient {
    * Switches user immediately via local test identity (X-Local-Test-User-ID / cookie).
    */
   public async devLogin(userId: string): Promise<SessionInfo> {
+    if (!localDemoEnabled()) throw new Error('Local demo is disabled');
     this.setActiveLocalUserId(userId);
 
     // Verify local identity works with chat-api
     try {
       await this.fetchRooms(1);
     } catch (err) {
-      console.warn('Backend verification for dev user returned error:', err);
+      this.setActiveLocalUserId(null);
+      throw err;
     }
 
     const devUsers = await this.fetchDevUsers();
@@ -263,14 +287,11 @@ export class HttpClient {
    */
   public async logout(allDevices = false): Promise<void> {
     const path = allDevices ? '/auth/logout-all' : '/auth/logout';
-    try {
+    if (!this.getActiveLocalUserId()) {
       await this.request<void>(path, { method: 'POST' });
-    } catch {
-      // Ignored for local test users where no server session exists
-    } finally {
-      this.setCsrfToken(null);
-      this.setActiveLocalUserId(null);
     }
+    this.setCsrfToken(null);
+    this.setActiveLocalUserId(null);
   }
 
   /**
@@ -370,22 +391,27 @@ export class HttpClient {
     roomId: string,
     clientMessageId: string,
     file: File,
-    caption?: string
+    caption?: string,
+    bypassChaos = false
   ): Promise<SendMessageResponse> {
     const formData = new FormData();
     formData.set('client_message_id', clientMessageId);
-    formData.set('file', file);
+    formData.set('image', file);
     if (caption && caption.trim()) {
       formData.set('text', caption);
     }
 
-    return this.request<SendMessageResponse>(
+    const response = await this.request<SendMessageResponse>(
       `/api/v1/rooms/${encodeURIComponent(roomId)}/messages`,
       {
         method: 'POST',
         body: formData
       }
     );
+    if (this.simulateDropAfterSend && !bypassChaos) {
+      throw new ApiError('Simulated network timeout after image upload', 0, 'SIMULATED_NETWORK_TIMEOUT', true);
+    }
+    return response;
   }
 
   /**
@@ -415,8 +441,8 @@ export class HttpClient {
     title?: string;
     member_ids?: string[];
     request_id?: string;
-  }): Promise<Room> {
-    return this.request<Room>('/api/v1/rooms', {
+  }): Promise<{ room_id: string; replayed: boolean }> {
+    return this.request<{ room_id: string; replayed: boolean }>('/api/v1/rooms', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
@@ -448,6 +474,16 @@ export class HttpClient {
         body: JSON.stringify({ member_ids: memberIds, request_id: requestId })
       }
     );
+  }
+
+  public async renameGroup(roomId: string, title: string): Promise<void> {
+    await this.request<void>(`/api/v1/rooms/${encodeURIComponent(roomId)}`, {
+      method: 'PATCH', body: JSON.stringify({ title })
+    });
+  }
+
+  public async removeGroupMember(roomId: string, userId: string): Promise<void> {
+    await this.request<void>(`/api/v1/rooms/${encodeURIComponent(roomId)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' });
   }
 
   /**

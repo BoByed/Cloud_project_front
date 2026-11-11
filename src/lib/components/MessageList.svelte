@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { chatEngine } from '../services/chat-engine.svelte.js';
+  import ChatImage from './ChatImage.svelte';
   import type { Message, PendingMessage } from '../types/contract.js';
   import { getUtf8ByteLength, validateMessageText } from '../types/contract.js';
 
@@ -31,7 +32,7 @@
     if (messagesContainer) {
       messagesContainer.scrollTo({
         top: messagesContainer.scrollHeight,
-        behavior: smooth ? 'smooth' : 'auto'
+        behavior: smooth && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto'
       });
     }
   }
@@ -110,51 +111,39 @@
 <div class="message-list-viewport" bind:this={messagesContainer}>
   <!-- Revocation Warning Banner (Section 5 & 7) -->
   {#if revokedReason}
-    <div class="revocation-banner">
+    <div class="revocation-banner" role="status">
       <div class="revocation-content">
-        <span class="revocation-icon">🚫</span>
         <div class="revocation-text">
-          <strong>คุณไม่ได้เป็นสมาชิกห้องนี้แล้ว ({revokedReason})</strong> — ระบบหยุดติดตาม WebSocket และระงับการส่งข้อความตามสัญญา Section 5 & 7
+          คุณไม่ได้เป็นสมาชิกห้องนี้แล้ว จึงส่งข้อความใหม่ไม่ได้
         </div>
       </div>
-      <button
-        type="button"
-        class="restore-demo-btn"
-        onclick={() => chatEngine.simulateRestoreMember()}
-      >
-        🔄 คืนสิทธิ์สมาชิกกลับเข้าห้อง (Demo Restore)
-      </button>
+
     </div>
   {/if}
 
   <!-- Top Load More History Button -->
-  {#if activeRoom}
+  {#if activeRoom && hasMoreHistory}
     <div class="history-loader-area">
-      {#if hasMoreHistory}
-        <button
-          type="button"
-          class="load-more-btn"
-          disabled={chatEngine.loadingHistory}
-          onclick={() => chatEngine.loadOlderHistory()}
-        >
-          {#if chatEngine.loadingHistory}
-            <span class="spin-icon">⏳</span> กำลังโหลดประวัติ...
-          {:else}
-            ↑ โหลดประวัติก่อนหน้า (before_seq)
-          {/if}
-        </button>
-      {:else if messages.length > 0}
-        <div class="history-start-pill">จุดเริ่มต้นของประวัติการสนทนาในเครื่อง</div>
-      {/if}
+      <button
+        type="button"
+        class="load-more-btn"
+        disabled={chatEngine.loadingHistory}
+        onclick={() => chatEngine.loadOlderHistory()}
+      >
+        {#if chatEngine.loadingHistory}
+          กำลังโหลด…
+        {:else}
+          ดูข้อความก่อนหน้า
+        {/if}
+      </button>
     </div>
   {/if}
 
   <!-- Empty State -->
   {#if messages.length === 0 && pendingSends.length === 0}
     <div class="empty-state">
-      <div class="empty-icon">👋</div>
       <p class="empty-title">ยังไม่มีข้อความในห้องนี้</p>
-      <p class="empty-desc">เริ่มการสนทนาคนแรกด้วยการพิมพ์ข้อความด้านล่าง</p>
+      <p class="empty-desc">ส่งข้อความแรกเพื่อเริ่มคุย</p>
     </div>
   {/if}
 
@@ -165,7 +154,7 @@
       <div class="message-row {isSelf ? 'self' : 'peer'}">
         <!-- Peer Avatar -->
         {#if !isSelf}
-          <div class="sender-avatar" title="{msg.sender.display_name} ({msg.sender.user_id})">
+          <div class="sender-avatar" aria-hidden="true">
             {msg.sender.display_name.slice(0, 2).toUpperCase()}
           </div>
         {/if}
@@ -177,13 +166,12 @@
           {/if}
 
           <!-- Plain Text Bubble (No HTML interpretation) -->
-          <div class="bubble">
-            <span class="bubble-text">{msg.text}</span>
+          <div class="bubble" class:image-bubble={Boolean(msg.image)}>
+            {#if msg.image}<ChatImage url={msg.image.url} description={msg.text} />{/if}
+            {#if msg.text}<span class="bubble-text">{msg.text}</span>{/if}
           </div>
 
-          <!-- Bubble Metadata (Seq & Time) -->
           <div class="bubble-meta">
-            <span class="seq-tag">#{msg.seq}</span>
             <span class="time-tag">{formatTime(msg.created_at)}</span>
           </div>
         </div>
@@ -192,47 +180,38 @@
 
     <!-- Pending Outbox Section (Section 4 & Section 6) -->
     {#if pendingSends.length > 0}
-      <div class="pending-section-divider">
-        <span>ข้อความรอยืนยัน (Outbox)</span>
-      </div>
-
       {#each pendingSends as pending (pending.client_message_id)}
         <div class="message-row self pending {pending.status}">
           <div class="bubble-container">
             <!-- Plain Text Bubble -->
             <div class="bubble pending-bubble">
+              {#if pending.image}<span>📷 {pending.image.name}</span>{/if}
               <span class="bubble-text">{pending.text}</span>
             </div>
 
             <!-- Outbox Status & Action Bar -->
             <div class="pending-meta-bar">
-              <span class="pending-id" title={pending.client_message_id}>
-                ID: {pending.client_message_id.slice(0, 8)}...
-              </span>
-
               {#if pending.status === 'sending' || pending.status === 'pending'}
                 <span class="status-indicator sending">
                   <span class="spin-icon">⟳</span> กำลังส่ง...
                 </span>
               {:else if pending.status === 'failed_retryable'}
                 <div class="status-indicator retryable">
-                  <span class="error-badge">⚠️ ส่งไม่สำเร็จ ({pending.error_code ?? 'เน็ตหลุด/Timeout'})</span>
+                  <span class="error-badge">ส่งไม่สำเร็จ</span>
                   <button
                     type="button"
                     class="retry-btn"
-                    title="ลองส่งซ้ำโดยใช้ client_message_id เดิม เพื่อพิสูจน์ Idempotency"
                     onclick={() => chatEngine.retryPendingMessage(pending.client_message_id)}
                   >
-                    ลองส่งซ้ำ (ใช้รหัสเดิม)
+                    ลองส่งอีกครั้ง
                   </button>
-                  <button
+                  {#if !pending.image}<button
                     type="button"
                     class="edit-btn"
-                    title="แก้ไขข้อความ โดยจะล้างรายการเดิมและสร้าง client_message_id ใหม่"
                     onclick={() => openEditModal(pending)}
                   >
-                    แก้ไขข้อความ (สร้างรหัสใหม่)
-                  </button>
+                    แก้ไข
+                  </button>{/if}
                   <button
                     type="button"
                     class="cancel-btn"
@@ -243,15 +222,14 @@
                 </div>
               {:else if pending.status === 'failed_permanent'}
                 <div class="status-indicator permanent">
-                  <span class="error-badge danger">❌ {pending.error_code ?? 'Error 4xx'}</span>
-                  <button
+                  <span class="error-badge danger">ส่งข้อความนี้ไม่ได้</span>
+                  {#if !pending.image}<button
                     type="button"
                     class="edit-btn"
-                    title="แก้ไขข้อความ โดยจะล้างรายการเดิมและสร้าง client_message_id ใหม่"
                     onclick={() => openEditModal(pending)}
                   >
-                    แก้ไขข้อความ (สร้างรหัสใหม่)
-                  </button>
+                    แก้ไข
+                  </button>{/if}
                   <button
                     type="button"
                     class="cancel-btn"
@@ -279,25 +257,22 @@
 >
   <div class="dialog-content">
     <div class="dialog-header">
-      <h3 id="editDialogTitle">แก้ไขข้อความ (สร้างรหัสใหม่)</h3>
+      <h3 id="editDialogTitle">แก้ไข</h3>
       <button type="button" class="close-x" onclick={closeEditModal} aria-label="ปิดหน้าต่าง">×</button>
     </div>
 
     <div class="dialog-body">
-      <p class="dialog-hint">
-        ตามสัญญาส่วนที่ 6: การแก้ไขเนื้อหาถือเป็นเจตนาใหม่ ระบบจะลบรายการเดิมและสร้าง <code>client_message_id</code> ใหม่ให้อัตโนมัติ
-      </p>
-
       <textarea
         class="edit-textarea composer-textarea"
         bind:value={editText}
-        placeholder="พิมพ์ข้อความใหม่ที่ต้องการส่ง..."
+        placeholder="พิมพ์ข้อความใหม่ที่ต้องการส่ง…"
+        aria-label="แก้ไขข้อความ"
         rows="3"
       ></textarea>
 
       <div class="edit-footer-info">
         <span class="byte-counter {editByteLength > 4096 ? 'warning' : ''}">
-          {editByteLength.toLocaleString()} / 4,096 bytes
+          {editByteLength > 4096 ? 'ข้อความยาวเกินไป' : ''}
         </span>
         {#if editError}
           <span class="edit-error-msg">{editError}</span>
@@ -325,10 +300,11 @@
   .message-list-viewport {
     flex: 1;
     overflow-y: auto;
-    padding: 16px 20px;
+    min-height: 0;
+    padding: 20px clamp(12px, 3vw, 36px);
     display: flex;
     flex-direction: column;
-    background-color: var(--bg-surface);
+    background-color: var(--bg-app);
   }
 
   .revocation-banner {
@@ -351,40 +327,12 @@
     gap: 10px;
     font-size: 13px;
     flex: 1;
-    min-width: 260px;
-  }
-
-  .revocation-icon {
-    font-size: 20px;
-    flex-shrink: 0;
+    min-width: 0;
   }
 
   .revocation-text {
     line-height: 1.4;
     color: var(--text-primary);
-  }
-
-  .revocation-text strong {
-    color: var(--status-red);
-  }
-
-  .restore-demo-btn {
-    padding: 6px 14px;
-    border-radius: 8px;
-    border: 1px solid var(--status-red);
-    background-color: var(--status-red);
-    color: white;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all 0.15s ease;
-  }
-
-  .restore-demo-btn:hover {
-    background-color: #d93025;
-    border-color: #d93025;
-    transform: scale(1.02);
   }
 
   .history-loader-area {
@@ -416,14 +364,6 @@
     cursor: not-allowed;
   }
 
-  .history-start-pill {
-    font-size: 11px;
-    color: var(--text-secondary);
-    background-color: var(--bg-input);
-    padding: 3px 10px;
-    border-radius: 10px;
-  }
-
   .empty-state {
     flex: 1;
     display: flex;
@@ -433,11 +373,6 @@
     color: var(--text-secondary);
     text-align: center;
     padding: 40px;
-  }
-
-  .empty-icon {
-    font-size: 48px;
-    margin-bottom: 12px;
   }
 
   .empty-title {
@@ -458,10 +393,20 @@
     min-height: min-content;
   }
 
+
+  @media (prefers-reduced-motion: no-preference) {
+    .message-row { animation: message-in 240ms ease-out both; }
+  }
+
+  @keyframes message-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
   .message-row {
     display: flex;
     gap: 8px;
-    max-width: 75%;
+    max-width: min(84%, 640px);
   }
 
   .message-row.peer {
@@ -489,6 +434,7 @@
   }
 
   .bubble-container {
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 3px;
@@ -508,12 +454,28 @@
   /* Bubble Styling */
   .bubble {
     padding: 9px 14px;
-    border-radius: 18px;
+    border-radius: 13px;
     font-size: 14px;
     line-height: 1.4;
-    word-break: break-word;
+    overflow-wrap: anywhere;
     white-space: pre-wrap;
     user-select: text;
+  }
+
+  .image-bubble {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: fit-content;
+    max-width: min(256px, 100%);
+    padding: 8px;
+  }
+
+  .image-bubble .bubble-text {
+    align-self: stretch;
+    max-width: 100%;
+    padding: 0 4px 2px;
   }
 
   .message-row.peer .bubble {
@@ -523,7 +485,7 @@
   }
 
   .message-row.self .bubble {
-    background: var(--brand-gradient);
+    background: var(--brand-fill);
     color: var(--bubble-out-text);
     border-bottom-right-radius: 4px;
   }
@@ -537,36 +499,8 @@
     padding: 0 4px;
   }
 
-  .seq-tag {
-    font-family: monospace;
-    font-size: 10px;
-    opacity: 0.8;
-  }
-
   .time-tag {
     font-size: 10px;
-  }
-
-  /* Pending / Outbox Section */
-  .pending-section-divider {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 16px 0 8px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    color: var(--text-secondary);
-    position: relative;
-  }
-
-  .pending-section-divider::before,
-  .pending-section-divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background-color: var(--border);
-    margin: 0 10px;
   }
 
   .message-row.pending .bubble {
@@ -592,12 +526,6 @@
     gap: 4px;
     align-items: flex-end;
     margin-top: 2px;
-  }
-
-  .pending-id {
-    font-family: monospace;
-    font-size: 10px;
-    color: var(--text-secondary);
   }
 
   .status-indicator {
@@ -702,19 +630,6 @@
     gap: 10px;
   }
 
-  .dialog-hint {
-    font-size: 12px;
-    color: var(--text-secondary);
-    line-height: 1.4;
-  }
-
-  .dialog-hint code {
-    font-family: monospace;
-    background-color: var(--bg-input);
-    padding: 1px 4px;
-    border-radius: 4px;
-  }
-
   .edit-textarea {
     border: 1px solid var(--border) !important;
     border-radius: 8px !important;
@@ -762,7 +677,7 @@
 
   .btn-primary {
     border: none;
-    background: var(--brand-gradient);
+    background: var(--brand-fill);
     color: white;
   }
 

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { chatEngine } from '../services/chat-engine.svelte.js';
 
   let { onClose }: { onClose: () => void } = $props();
@@ -27,12 +26,6 @@
 
   // Loading flags for chaos actions
   let actionLoading = $state<string | null>(null);
-
-  onMount(() => {
-    if (typeof chatEngine.refreshDevChaosStatus === 'function') {
-      chatEngine.refreshDevChaosStatus().catch(() => {});
-    }
-  });
 
   async function runIdempotencyTest(count: number) {
     idempotencyRunning = true;
@@ -161,6 +154,16 @@
   </div>
 
   <div class="drawer-content">
+    <section class="drawer-card">
+      <h4 class="card-title">Network simulation</h4>
+      <label><input type="checkbox" bind:checked={chatEngine.simulateTimeoutOnSend} /> จำลองเน็ตหลุดหลังส่ง (Timeout Test)</label>
+      {#if chatEngine.activeRoomId}
+        {@const roomId = chatEngine.activeRoomId}
+        <p class="card-desc">Cursor: #{chatEngine.activeCursor}</p>
+        <button type="button" class="sim-btn secondary" disabled={chatEngine.syncingByRoom[roomId]} onclick={() => chatEngine.syncRoom(roomId)}>Sync now</button>
+      {/if}
+    </section>
+
     <!-- Card 1: Idempotency & Conflict (Section 4 & 9) -->
     <section class="drawer-card">
       <h4 class="card-title">1. Idempotency & Conflict (Section 4 & 9)</h4>
@@ -252,150 +255,17 @@
       {/if}
     </section>
 
-    <!-- Card 2: Transactional Outbox & Worker Simulation (M2) -->
-    <section class="drawer-card">
-      <div class="card-header-flex">
-        <h4 class="card-title">2. Transactional Outbox & Worker (M2)</h4>
-        <span class="worker-status-pill {chatEngine.workerPaused ? 'paused' : 'running'}">
-          {chatEngine.workerPaused ? '⏸️ Worker Paused' : '▶️ Worker Running'}
-        </span>
-      </div>
-      <p class="card-desc">
-        จำลอง Transactional Outbox Pattern: เมื่อหยุด Worker ข้อความจะบันทึกในตารางสำเร็จ (201) แต่ดองไว้ยังไม่กระจาย WS จนกว่าจะเปิด Worker ให้ Flush งานค้าง
-      </p>
-
-      <div class="worker-meta-bar">
-        <span class="backlog-label">Outbox Backlog:</span>
-        <span class="backlog-counter {chatEngine.outboxBacklogCount > 0 ? 'has-backlog' : ''}">
-          {chatEngine.outboxBacklogCount} งาน
-        </span>
-      </div>
-
-      <button
-        type="button"
-        class="sim-btn {chatEngine.workerPaused ? 'success-btn' : 'warning'}"
-        disabled={actionLoading === 'worker'}
-        onclick={handleToggleWorker}
-      >
-        {#if actionLoading === 'worker'}
-          กำลังสลับสถานะ...
-        {:else if chatEngine.workerPaused}
-          ▶️ เปิด Worker & ส่งงานค้าง (Flush Outbox)
-        {:else}
-          ⏸️ หยุด Outbox Worker (ดองงานแจ้งเตือน)
-        {/if}
-      </button>
-    </section>
-
-    <!-- Card 3: Live Event Anomalies & Silent Drop Recovery (Section 6 & 9) -->
-    <section class="drawer-card">
-      <h4 class="card-title">3. Live Event Anomalies & Silent Drop (Section 6 & 9)</h4>
-      <p class="card-desc">
-        ทดสอบพฤติกรรมเมื่อ WebSocket มีความผิดปกติ เช่น ข้อความหายเงียบ, เฟรมเบิ้ลซ้ำ, หรือเฟรมลัดคิว
-      </p>
-
-      <div class="btn-group">
-        <button
-          type="button"
-          class="sim-btn"
-          disabled={!chatEngine.activeRoomId || actionLoading === 'incoming'}
-          onclick={handleSimulateIncoming}
-        >
-          💬 ให้เพื่อน (Demo B) ส่งข้อความสดเข้าห้อง
-        </button>
-
-        <button
-          type="button"
-          class="sim-btn secondary"
-          disabled={!chatEngine.activeRoomId || actionLoading === 'silent'}
-          onclick={handleSimulateSilentPeerMessage}
-          title="เซิร์ฟเวอร์ commit ข้อความแต่ไม่บรอดแคสต์ WS รอตัวจับ 15s Periodic Sync หรือกด Sync กู้คืน"
-        >
-          🔇 เพื่อนส่งแต่แจ้งเตือน WS หายเงียบ (รอ Periodic Sync 15s กู้คืน)
-        </button>
-
-        <button
-          type="button"
-          class="sim-btn secondary"
-          disabled={!chatEngine.activeRoomId || actionLoading === 'duplicate'}
-          onclick={handleSimulateDuplicateWs}
-          title="เซิร์ฟเวอร์ยิงเฟรม message.created ซ้ำ 3 ครั้งติดกัน พิสูจน์ไคลเอนต์กรองซ้ำด้วย message_id"
-        >
-          👯 ยิงเฟรม WS ซ้ำ 3 รอบ (พิสูจน์ตัดซ้ำด้วย message_id)
-        </button>
-
-        <button
-          type="button"
-          class="sim-btn secondary"
-          disabled={!chatEngine.activeRoomId || actionLoading === 'out_of_order'}
-          onclick={handleSimulateOutOfOrderWs}
-          title="เซิร์ฟเวอร์ส่งข้อความ #N+2 ก่อน #N+1 พิสูจน์ไคลเอนต์ตรวจจับ Gap และกู้คืน"
-        >
-          🔀 ยิงเฟรม WS สลับลำดับ (#N+2 มาถึงก่อน #N+1)
-        </button>
-      </div>
-    </section>
-
-    <!-- Card 4: Membership Revocation (ACCESS_REVOKED & 404) -->
-    <section class="drawer-card">
-      <h4 class="card-title">4. Membership Revocation (ACCESS_REVOKED & 404)</h4>
-      <p class="card-desc">
-        ทดสอบการถูกเพิกถอนสิทธิ์สมาชิกตามสัญญา Section 5 & 7 ทั้งแบบรับ WS ทันที หรือแบบเงียบแล้วติด 404
-      </p>
-
-      <div class="btn-group">
-        <button
-          type="button"
-          class="sim-btn danger"
-          disabled={!chatEngine.activeRoomId || actionLoading === 'remove_loud'}
-          onclick={() => handleRemoveMember(false)}
-        >
-          🚫 เตะออกจากห้องสดๆ (subscription.revoked)
-        </button>
-
-        <button
-          type="button"
-          class="sim-btn warning"
-          disabled={!chatEngine.activeRoomId || actionLoading === 'remove_silent'}
-          onclick={() => handleRemoveMember(true)}
-          title="เตะออกเงียบๆ ไม่ส่ง WS แล้วลองส่งข้อความหรือ Sync เพื่อดูการตอบ 404 ROOM_NOT_FOUND"
-        >
-          🕵️ เตะออกจากห้องแบบเงียบ (แจ้งเตือนหาย แต่ส่ง/ซิงก์แล้วติด 404)
-        </button>
-
-        <button
-          type="button"
-          class="sim-btn success-btn"
-          disabled={!chatEngine.activeRoomId || actionLoading === 'restore'}
-          onclick={handleRestoreMember}
-        >
-          ✅ คืนสิทธิ์สมาชิกกลับเข้าห้อง
-        </button>
-      </div>
-    </section>
+    <section class="drawer-card"><h4>Server-side fault controls</h4><p>Worker pause and membership fault injection require backend support. Use local service controls and a second demo user for these tests.</p></section>
 
     <!-- Card 5: WebSocket Chaos (1001 / 1013 / Gap Recovery) -->
     <section class="drawer-card">
       <h4 class="card-title">5. WebSocket Chaos & Auto-Recovery</h4>
       <p class="card-desc">
-        สั่งตัด WebSocket ด้วย Close Code ต่างๆ เพื่อดู Full-Jitter Backoff และการรัน Contiguous Sync อัตโนมัติเมื่อกลับมาต่อติด
+        ตัดการเชื่อมต่อในเบราว์เซอร์เพื่อทดสอบการเชื่อมใหม่และ sync
       </p>
 
       <div class="btn-group">
-        <button
-          type="button"
-          class="sim-btn warning"
-          onclick={() => chatEngine.simulateWsDisconnect(1001)}
-        >
-          🔌 สั่งหลุด: 1001 (Server Going Away)
-        </button>
-        <button
-          type="button"
-          class="sim-btn danger"
-          onclick={() => chatEngine.simulateWsDisconnect(1013)}
-        >
-          🛑 สั่งหลุด: 1013 (Backpressure)
-        </button>
+        <button type="button" class="sim-btn warning" onclick={() => chatEngine.simulateWsDisconnect()}>Disconnect and reconnect</button>
         <button
           type="button"
           class="sim-btn secondary"
@@ -433,8 +303,9 @@
 
 <style>
   .dev-drawer {
-    width: 400px;
-    height: 100%;
+    position: fixed;
+    inset: 0 0 0 auto;
+    width: min(100%, 400px);
     background-color: var(--bg-surface);
     border-left: 1px solid var(--border);
     display: flex;
