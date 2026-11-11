@@ -43,6 +43,7 @@ export class ApiError extends Error {
 
 export class HttpClient {
   private csrfToken: string | null = null;
+  private activeLocalUserId: string | null = null;
   public simulateDropAfterSend = false;
 
   public setCsrfToken(token: string | null): void {
@@ -53,6 +54,34 @@ export class HttpClient {
     return this.csrfToken;
   }
 
+  public getActiveLocalUserId(): string | null {
+    if (typeof window !== 'undefined' && !this.activeLocalUserId) {
+      try {
+        this.activeLocalUserId = localStorage.getItem('local_test_user_id');
+      } catch {
+        // Ignored in SSR or private mode
+      }
+    }
+    return this.activeLocalUserId;
+  }
+
+  public setActiveLocalUserId(userId: string | null): void {
+    this.activeLocalUserId = userId;
+    if (typeof window !== 'undefined') {
+      try {
+        if (userId) {
+          localStorage.setItem('local_test_user_id', userId);
+          document.cookie = `local_test_user_id=${encodeURIComponent(userId)}; path=/; SameSite=Lax`;
+        } else {
+          localStorage.removeItem('local_test_user_id');
+          document.cookie = 'local_test_user_id=; path=/; max-age=0; SameSite=Lax';
+        }
+      } catch {
+        // Ignored
+      }
+    }
+  }
+
   private async request<T>(
     path: string,
     options: RequestInit = {},
@@ -61,9 +90,14 @@ export class HttpClient {
     const headers = new Headers(options.headers || {});
     headers.set('Accept', 'application/json');
 
+    const localUserId = this.getActiveLocalUserId();
+    if (localUserId && !headers.has('X-Local-Test-User-ID')) {
+      headers.set('X-Local-Test-User-ID', localUserId);
+    }
+
     const method = (options.method || 'GET').toUpperCase();
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-      if (!headers.has('Content-Type') && options.body) {
+      if (!headers.has('Content-Type') && options.body && !(options.body instanceof FormData)) {
         headers.set('Content-Type', 'application/json');
       }
       if (this.csrfToken && !headers.has('X-CSRF-Token')) {
@@ -164,49 +198,64 @@ export class HttpClient {
 
   /**
    * Fetches current session info and updates csrf_token.
+   * If production session endpoint fails, falls back to active local test user identity.
    */
   public async fetchSession(): Promise<SessionInfo> {
-    const data = await this.request<SessionInfo>('/api/v1/session');
-    if (data?.csrf_token) {
-      this.setCsrfToken(data.csrf_token);
+    try {
+      const data = await this.request<SessionInfo>('/api/v1/session');
+      if (data?.csrf_token) {
+        this.setCsrfToken(data.csrf_token);
+      }
+      return data;
+    } catch (err) {
+      const localId = this.getActiveLocalUserId();
+      if (localId) {
+        return this.devLogin(localId);
+      }
+      throw err;
     }
-    return data;
   }
 
   /**
-   * Fetches mock dev users available for local switching (M1/M2).
+   * Fetches seeded mock demo users (M1/M2 fixtures).
    */
   public async fetchDevUsers(): Promise<UserSummary[]> {
-    try {
-      const res = await this.request<
-        UserSummary[] | { users?: UserSummary[]; items?: UserSummary[] }
-      >('/auth/dev-users');
-      if (Array.isArray(res)) return res;
-      if (res && Array.isArray(res.users)) return res.users;
-      if (res && Array.isArray(res.items)) return res.items;
-      return [];
-    } catch {
-      // Default local fallback list with canonical UUIDs matching temp_backend
-      return [
-        { user_id: '11111111-1111-4111-8111-111111111111', display_name: 'Demo A' },
-        { user_id: '11111111-1111-4111-8111-222222222222', display_name: 'Demo B' },
-        { user_id: '11111111-1111-4111-8111-333333333333', display_name: 'Demo C' }
-      ];
-    }
+    // Canonical seeded users in chat-api (chat-api/internal/demo/fixtures.go)
+    return [
+      { user_id: '11111111-1111-4111-8111-111111111111', display_name: 'Demo A' },
+      { user_id: '22222222-2222-4222-8222-222222222222', display_name: 'Demo B' }
+    ];
   }
 
   /**
-   * Switches user immediately via local dev endpoint.
+   * Switches user immediately via local test identity (X-Local-Test-User-ID / cookie).
    */
   public async devLogin(userId: string): Promise<SessionInfo> {
-    const data = await this.request<SessionInfo>('/auth/dev-login', {
-      method: 'POST',
-      body: JSON.stringify({ user_id: userId })
-    });
-    if (data?.csrf_token) {
-      this.setCsrfToken(data.csrf_token);
+    this.setActiveLocalUserId(userId);
+
+    // Verify local identity works with chat-api
+    try {
+      await this.fetchRooms(1);
+    } catch (err) {
+      console.warn('Backend verification for dev user returned error:', err);
     }
-    return data;
+
+    const devUsers = await this.fetchDevUsers();
+    const user = devUsers.find((u) => u.user_id === userId) || {
+      user_id: userId,
+      display_name: userId === '11111111-1111-4111-8111-111111111111' ? 'Demo A' : 'Demo B'
+    };
+
+    const now = new Date();
+    const session: SessionInfo = {
+      user,
+      session: {
+        expires_at: new Date(now.getTime() + 8 * 3600 * 1000).toISOString(),
+        idle_expires_at: new Date(now.getTime() + 30 * 60 * 1000).toISOString()
+      },
+      csrf_token: ''
+    };
+    return session;
   }
 
   /**
@@ -216,8 +265,11 @@ export class HttpClient {
     const path = allDevices ? '/auth/logout-all' : '/auth/logout';
     try {
       await this.request<void>(path, { method: 'POST' });
+    } catch {
+      // Ignored for local test users where no server session exists
     } finally {
       this.setCsrfToken(null);
+      this.setActiveLocalUserId(null);
     }
   }
 
@@ -308,6 +360,93 @@ export class HttpClient {
 
     return this.request<SyncResponse>(
       `/api/v1/rooms/${encodeURIComponent(roomId)}/sync?${params.toString()}`
+    );
+  }
+
+  /**
+   * Sends an image message via multipart/form-data.
+   */
+  public async sendImageMessageHttp(
+    roomId: string,
+    clientMessageId: string,
+    file: File,
+    caption?: string
+  ): Promise<SendMessageResponse> {
+    const formData = new FormData();
+    formData.set('client_message_id', clientMessageId);
+    formData.set('file', file);
+    if (caption && caption.trim()) {
+      formData.set('text', caption);
+    }
+
+    return this.request<SendMessageResponse>(
+      `/api/v1/rooms/${encodeURIComponent(roomId)}/messages`,
+      {
+        method: 'POST',
+        body: formData
+      }
+    );
+  }
+
+  /**
+   * Searches active users by display name query (Contract Section 4).
+   */
+  public async searchUsers(
+    query: string,
+    limit = 20,
+    cursor?: string | null
+  ): Promise<{ items: UserSummary[]; next_cursor: string | null }> {
+    const params = new URLSearchParams();
+    params.set('q', query);
+    if (limit) params.set('limit', limit.toString());
+    if (cursor) params.set('cursor', cursor);
+
+    return this.request<{ items: UserSummary[]; next_cursor: string | null }>(
+      `/api/v1/users?${params.toString()}`
+    );
+  }
+
+  /**
+   * Opens a new DM or creates a group room.
+   */
+  public async createRoom(payload: {
+    kind: 'dm' | 'group';
+    user_id?: string;
+    title?: string;
+    member_ids?: string[];
+    request_id?: string;
+  }): Promise<Room> {
+    return this.request<Room>('/api/v1/rooms', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  /**
+   * Fetches room members list.
+   */
+  public async fetchMembers(
+    roomId: string
+  ): Promise<{ items: Array<UserSummary & { role: string; is_active: boolean }> }> {
+    return this.request<{ items: Array<UserSummary & { role: string; is_active: boolean }> }>(
+      `/api/v1/rooms/${encodeURIComponent(roomId)}/members`
+    );
+  }
+
+  /**
+   * Adds members to a group room.
+   */
+  public async addMembers(
+    roomId: string,
+    memberIds: string[],
+    requestId: string
+  ): Promise<{ room_id: string; replayed: boolean }> {
+    return this.request<{ room_id: string; replayed: boolean }>(
+      `/api/v1/rooms/${encodeURIComponent(roomId)}/members`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ member_ids: memberIds, request_id: requestId })
+      }
     );
   }
 

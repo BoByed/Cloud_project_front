@@ -1,0 +1,16 @@
+node_modules
+.svelte-kit
+build
+dist
+.env
+.env.*
+!.env.example
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.git
+.gitignore
+.vscode
+.idea
+Dockerfile
+.dockerignore

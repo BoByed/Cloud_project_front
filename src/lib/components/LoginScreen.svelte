@@ -1,11 +1,10 @@
 <script lang="ts">
   import { chatEngine } from '../services/chat-engine.svelte.js';
 
-  // Fallback demo users if devUsers API hasn't resolved yet
+  // Official seeded demo accounts in chat-api (fixtures)
   const defaultDevUsers = [
     { user_id: '11111111-1111-4111-8111-111111111111', display_name: 'Demo A' },
-    { user_id: '11111111-1111-4111-8111-222222222222', display_name: 'Demo B' },
-    { user_id: '11111111-1111-4111-8111-333333333333', display_name: 'Demo C' }
+    { user_id: '22222222-2222-4222-8222-222222222222', display_name: 'Demo B' }
   ];
 
   let displayUsers = $derived(
