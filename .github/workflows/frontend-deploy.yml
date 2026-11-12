@@ -1,0 +1,55 @@
+name: Deploy frontend
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: frontend-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      AWS_REGION: ap-southeast-2
+      DEPLOY_ROLE_ARN: ${{ vars.AWS_FRONTEND_DEPLOY_ROLE_ARN }}
+      FRONTEND_BUCKET: ${{ vars.AWS_FRONTEND_BUCKET }}
+      DISTRIBUTION_ID: ${{ vars.AWS_CLOUDFRONT_DISTRIBUTION_ID }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - name: Verify deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${DEPLOY_ROLE_ARN:?Set AWS_FRONTEND_DEPLOY_ROLE_ARN repository variable}"
+          : "${FRONTEND_BUCKET:?Set AWS_FRONTEND_BUCKET repository variable}"
+          : "${DISTRIBUTION_ID:?Set AWS_CLOUDFRONT_DISTRIBUTION_ID repository variable}"
+      - name: Authenticate to AWS
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Publish static assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws s3 sync build/ "s3://${FRONTEND_BUCKET}/" --exclude '*' --include '_app/immutable/*' --cache-control 'public,max-age=31536000,immutable'
+          aws s3 sync build/ "s3://${FRONTEND_BUCKET}/" --exclude '_app/immutable/*' --exclude 'index.html' --cache-control 'no-cache'
+          aws s3 cp build/index.html "s3://${FRONTEND_BUCKET}/index.html" --content-type 'text/html; charset=utf-8' --cache-control 'no-cache'
+          aws cloudfront create-invalidation --distribution-id "${DISTRIBUTION_ID}" --paths '/' '/index.html' '/_app/version.json'
