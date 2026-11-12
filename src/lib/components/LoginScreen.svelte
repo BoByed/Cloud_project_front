@@ -40,9 +40,10 @@
     try {
       if (mode === 'signup') {
         await httpClient.signup(email.trim(), password, name.trim());
+        mode = 'login';
+        message = 'สร้างบัญชีแล้ว กรุณาเข้าสู่ระบบ';
+        await chatEngine.loginWithPassword(email.trim(), password);
         password = '';
-        mode = 'confirm';
-        message = 'เราส่งรหัสยืนยันไปยังอีเมลของคุณแล้ว';
       } else if (mode === 'confirm') {
         await httpClient.confirmSignup(email.trim(), code);
         code = '';
@@ -111,7 +112,6 @@
         {/if}
         {#if mode === 'login'}
           <button type="button" onclick={() => { mode = 'signup'; error = ''; message = ''; }}>สร้างบัญชีใหม่</button>
-          <button type="button" onclick={() => { mode = 'confirm'; error = ''; message = ''; }}>ยืนยันอีเมล</button>
         {:else}
           <button type="button" onclick={() => { mode = 'login'; password = ''; error = ''; message = ''; }}>กลับไปเข้าสู่ระบบ</button>
         {/if}
