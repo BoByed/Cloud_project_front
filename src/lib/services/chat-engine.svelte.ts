@@ -192,6 +192,12 @@ export class ChatEngine {
     }
   }
 
+  public async loginWithPassword(email: string, password: string): Promise<void> {
+    const session = await httpClient.passwordLogin(email, password);
+    this.session = session;
+    await this.onLoginSuccess();
+  }
+
   /**
    * Logs out from this device or all devices.
    */

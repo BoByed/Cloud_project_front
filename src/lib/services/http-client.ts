@@ -238,6 +238,25 @@ export class HttpClient {
     }
   }
 
+  public signup(email: string, password: string, name: string): Promise<{ ok: boolean }> {
+    return this.request('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password, name }) });
+  }
+
+  public confirmSignup(email: string, code: string): Promise<{ ok: boolean }> {
+    return this.request('/auth/signup/confirm', { method: 'POST', body: JSON.stringify({ email, code }) });
+  }
+
+  public resendSignupCode(email: string): Promise<{ ok: boolean }> {
+    return this.request('/auth/signup/resend', { method: 'POST', body: JSON.stringify({ email }) });
+  }
+
+  public async passwordLogin(email: string, password: string): Promise<SessionInfo> {
+    await this.request<{ ok: boolean }>('/auth/password/login', {
+      method: 'POST', body: JSON.stringify({ email, password })
+    });
+    return this.fetchSession();
+  }
+
   /**
    * Fetches seeded mock demo users (M1/M2 fixtures).
    */
