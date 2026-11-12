@@ -4,7 +4,7 @@
 # Stage 2: Production Web Server (Non-root Unprivileged Nginx)
 # ==============================================================================
 
-FROM node:22-alpine AS builder
+FROM node:22.23.5-alpine3.24 AS builder
 
 WORKDIR /app
 
