@@ -74,20 +74,18 @@
 </script>
 
 <div class="composer-wrapper">
-  {#if preview}
-    <div><img src={preview} alt="ตัวอย่างรูปที่เลือก" style="max-width: 160px; max-height: 120px" />
-      <button type="button" onclick={removeImage}>นำรูปออก</button></div>
-  {/if}
   {#if byteLength > 4096}
     <p class="length-error" role="status">ข้อความยาวเกินไป กรุณาย่อก่อนส่ง</p>
   {/if}
 
-
-  <div class="composer-bar {isRevoked ? 'revoked' : ''}">
-    <label class="image-picker" title="แนบรูปภาพ">
-      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m3 17 5-4 4 3 5-6 4 4" /></svg>
-      <input aria-label="แนบรูปภาพ" type="file" accept="image/jpeg,image/png,image/webp" onchange={selectImage} disabled={isSending || isRevoked} />
-    </label>
+  <div class="composer-bar" class:revoked={isRevoked}>
+    {#if preview}
+      <div class="attachment">
+        <img src={preview} alt="ตัวอย่างรูปที่เลือก" />
+        <span>{image?.name}</span>
+        <button type="button" onclick={removeImage} aria-label="นำรูปออก">×</button>
+      </div>
+    {/if}
     <div class="textarea-container">
       <textarea
         class="composer-textarea"
@@ -100,19 +98,18 @@
       ></textarea>
     </div>
 
-    <!-- Send Button -->
-    <button
-      type="button"
-      class="send-btn"
-      disabled={!canSend}
-      onclick={handleSend}
-      aria-label="ส่งข้อความ"
-      title={isRevoked ? 'สิทธิ์สมาชิกถูกเพิกถอน' : canSend ? 'ส่งข้อความ' : 'พิมพ์ข้อความหรือแนบรูปก่อนส่ง'}
-    >
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-      </svg>
-    </button>
+    <div class="composer-tools">
+      <label class="image-picker" title="แนบรูปภาพ">
+        <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m3 17 5-4 4 3 5-6 4 4" /></svg>
+        <input aria-label="แนบรูปภาพ" type="file" accept="image/jpeg,image/png,image/webp" onchange={selectImage} disabled={isSending || isRevoked} />
+      </label>
+      <button type="button" class="send-btn" disabled={!canSend} onclick={handleSend} aria-label="ส่งข้อความ">
+        <span>{isSending ? 'กำลังส่ง…' : 'ส่ง'}</span>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m5 12 14-7-5 14-3-6-6-1Zm6 1 8-8" />
+        </svg>
+      </button>
+    </div>
   </div>
 
   <!-- Validation / Send Error Alert -->
@@ -142,15 +139,20 @@
   .length-error { color: var(--status-red); font-size: 12px; }
 
   .composer-bar {
-    display: flex;
-    align-items: flex-end;
-    gap: 4px;
-    background-color: var(--bg-input);
-    border-radius: 10px;
-    padding: 4px 6px;
+    display: grid;
+    gap: 6px;
+    background: var(--bg-surface);
+    border-radius: 16px;
+    padding: 8px;
     border: 1px solid var(--border);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    box-shadow: 0 5px 24px #262a1e0f;
   }
+
+  .composer-tools { display: flex; align-items: center; justify-content: space-between; padding: 4px 0 0; border-top: 1px solid var(--border); }
+  .attachment { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; padding: 4px 8px 4px 4px; border-radius: 9px; background: var(--bg-input); }
+  .attachment img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; }
+  .attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attachment button { min-width: 28px; height: 28px; border: 0; border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); cursor: pointer; }
 
   .composer-bar.revoked {
     opacity: 0.7;
@@ -159,8 +161,11 @@
   }
 
   .composer-bar:focus-within {
-    border-color: var(--brand-blue);
-    box-shadow: 0 0 0 1px var(--brand-blue);
+    border-color: var(--brand-accent);
+  }
+
+  .composer-textarea:focus-visible {
+    outline: none;
   }
 
   .textarea-container {
@@ -170,9 +175,8 @@
   }
 
   .send-btn {
-    width: 36px;
-    height: 36px;
-    border-radius: 7px;
+    min-height: 38px;
+    border-radius: 10px;
     border: none;
     background: var(--brand-fill);
     color: white;
@@ -182,7 +186,9 @@
     cursor: pointer;
     flex-shrink: 0;
     transition: transform 0.1s ease, opacity 0.15s ease;
-    padding-left: 3px; /* visual center for send arrow */
+    padding: 0 12px;
+    gap: 6px;
+    font-weight: 600;
   }
 
   .send-btn:hover:not(:disabled) {
@@ -226,4 +232,6 @@
   @media (max-width: 700px) {
     .composer-wrapper { padding: 8px; }
   }
+  .composer-wrapper { padding: 12px clamp(20px, 5vw, 76px) 26px; border-top: 0; }
+  @media (max-width: 700px) { .composer-wrapper { padding: 10px 16px 16px; } }
 </style>

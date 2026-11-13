@@ -389,7 +389,8 @@
   .messages-stack {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 20px;
+    margin-block-start: auto;
     min-height: min-content;
   }
 
@@ -485,7 +486,7 @@
   }
 
   .message-row.self .bubble {
-    background: var(--brand-fill);
+    background: var(--bubble-out-bg);
     color: var(--bubble-out-text);
     border-bottom-right-radius: 4px;
   }
@@ -700,4 +701,12 @@
   .btn-secondary:hover {
     background-color: var(--item-hover);
   }
+
+  .message-list-viewport { padding: 24px clamp(20px, 5vw, 76px); background: var(--bg-surface); }
+  .sender-avatar { border-radius: 12px; background: var(--group-bg); color: var(--group-text); }
+  .bubble { padding: 12px 16px; line-height: 1.55; box-shadow: 0 1px 2px rgba(30, 35, 25, .04); }
+  .message-row.peer .bubble { border-radius: 4px 17px 17px 17px; }
+  .message-row.self .bubble { border-radius: 17px 4px 17px 17px; }
+  .history-start-pill { background: var(--bg-input); border-radius: 999px; padding: 6px 12px; }
+
 </style>

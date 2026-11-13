@@ -10,11 +10,18 @@
     onNewRoom: () => void;
   } = $props();
 
+  const filters = [
+    { value: 'all', label: 'ทั้งหมด' },
+    { value: 'dm', label: 'ส่วนตัว' },
+    { value: 'group', label: 'กลุ่ม' }
+  ] as const;
+  let roomFilter = $state<(typeof filters)[number]['value']>('all');
   let searchQuery = $state('');
   let signingOut = $state(false);
   let logoutError = $state(false);
   let refreshError = $state(false);
   let filteredRooms = $derived(chatEngine.rooms.filter((room) =>
+    (roomFilter === 'all' || room.kind === roomFilter) &&
     room.title.toLowerCase().includes(searchQuery.trim().toLowerCase())
   ));
   let currentScheme = $state<'light' | 'dark'>('light');
@@ -103,7 +110,13 @@
 <aside class="sidebar" aria-label="รายการแชท">
   <header class="sidebar-header">
     <div class="wordmark"><BrandMark /> Cloud Chat</div>
-<div class="heading-row"><h1>แชท</h1><div><button type="button" class="header-action" onclick={refreshRooms} aria-label="รีเฟรชรายการแชท" title="รีเฟรชรายการแชท">↻</button><button type="button" class="header-action" onclick={onNewRoom} aria-label="เริ่มแชทใหม่" title="เริ่มแชทใหม่">＋</button></div></div>
+    <div class="heading-row">
+      <h1>แชท</h1>
+      <button type="button" class="refresh" onclick={refreshRooms} aria-label="รีเฟรชรายการแชท" title="รีเฟรชรายการแชท">↻</button>
+    </div>
+    <button type="button" class="new-chat" onclick={onNewRoom}>
+      <span aria-hidden="true">＋</span> เริ่มแชทใหม่
+    </button>
     <label class="search">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
         <circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" />
@@ -112,10 +125,17 @@
     </label>
   </header>
 
+  <div class="room-filters" role="group" aria-label="ประเภทห้องสนทนา">
+    {#each filters as filter (filter.value)}
+      <button type="button" aria-pressed={roomFilter === filter.value} onclick={() => roomFilter = filter.value}>
+        {filter.label}
+      </button>
+    {/each}
+  </div>
   <nav class="rooms" aria-label="ห้องสนทนา">
     {#if refreshError}<p class="empty" role="alert">รีเฟรชแชทไม่สำเร็จ กรุณาลองอีกครั้ง</p>{/if}
     {#if filteredRooms.length === 0}
-      <p class="empty">{searchQuery.trim() ? 'ไม่พบแชทที่ตรงกับคำค้น' : 'ยังไม่มีห้องสนทนา'}</p>
+      <p class="empty">{searchQuery.trim() ? 'ไม่พบแชทที่ตรงกับคำค้น' : 'ไม่มีแชทในรายการนี้'}</p>
     {:else}
       <ul>
         {#each filteredRooms as room (room.room_id)}
@@ -135,6 +155,7 @@
                   {chatEngine.revokedRooms[room.room_id] ? 'เข้าถึงไม่ได้' : room.kind === 'group' ? 'กลุ่ม' : 'แชทส่วนตัว'}
                 </span>
               </span>
+              {#if active}<span class="active-indicator" aria-hidden="true"></span>{/if}
             </button>
           </li>
         {/each}
@@ -180,8 +201,6 @@
   .wordmark { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 700; }
   .heading-row { display: flex; align-items: center; justify-content: space-between; margin: 24px 0 14px; }
   h1 { font-size: 25px; line-height: 1.3; }
-  .header-action { width: 36px; height: 36px; border: 0; border-radius: 8px; background: var(--bg-input); color: var(--brand-accent); font-size: 22px; margin-left: 5px; }
-  .header-action:hover { background: var(--item-active); }
   .search { display: flex; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-secondary); background: var(--bg-input); }
   .search:focus-within { border-color: var(--brand-accent); }
   .search svg { flex-shrink: 0; }
@@ -225,4 +244,26 @@
   }
 
   @media (max-width: 700px) { .sidebar { width: 100%; border-right: 0; } }
+  .sidebar-header { padding: 28px 22px 20px; }
+  .wordmark { gap: 11px; letter-spacing: -.03em; font-size: 19px; }
+  .heading-row { margin: 27px 0 16px; }
+  .search { border-radius: 12px; }
+  .search input { min-height: 44px; }
+  .rooms { padding: 0 12px 16px; }
+  .room-item { padding: 12px; border-radius: 13px; }
+  .room-avatar { width: 44px; height: 44px; border-radius: 15px; background: var(--palette-sky); color: var(--palette-ink); }
+  .room-avatar.group { background: var(--group-bg); color: var(--group-text); }
+  footer { padding: 12px; }
+  summary { border: 1px solid var(--border); border-radius: 14px; padding: 10px; }
+  .profile-avatar { width: 36px; height: 36px; }
+  .new-chat, .refresh { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 11px; }
+  .new-chat { width: 100%; min-height: 44px; margin-bottom: 12px; background: var(--brand-fill); color: white; border: 1px solid transparent; font-weight: 600; }
+  .new-chat:hover { background: var(--brand-fill-hover); }
+  .refresh { width: 36px; height: 36px; border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-secondary); font-size: 21px; }
+  .refresh:hover { background: var(--item-hover); }
+  .room-filters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; margin: 0 22px 14px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 12px; }
+  .room-filters button { min-height: 34px; padding: 4px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-secondary); }
+  .room-filters button[aria-pressed="true"] { background: var(--bg-surface); border-color: var(--border); color: var(--text-primary); font-weight: 600; }
+  .room-content { flex: 1; }
+  .active-indicator { width: 7px; height: 7px; border-radius: 50%; background: var(--brand-accent); flex-shrink: 0; }
 </style>

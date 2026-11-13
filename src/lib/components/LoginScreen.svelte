@@ -74,7 +74,7 @@
   }
 </script>
 
-<main class="login">
+<main class="login" class:signup={mode === 'signup'}>
   <section class="sign-in" aria-labelledby="login-title">
     <div class="sign-in-inner">
       <div class="wordmark"><BrandMark size={36} /> Cloud Chat</div>
@@ -87,6 +87,12 @@
 
       {#if error}<p class="login-error" role="alert">{error}</p>{/if}
       {#if message}<p class="notice" role="status">{message}</p>{/if}
+      {#if mode !== 'confirm'}
+        <div class="auth-mode" role="group" aria-label="เลือกวิธีเข้าใช้งาน">
+          <button type="button" aria-pressed={mode === 'login'} onclick={() => { mode = 'login'; error = ''; message = ''; }}>เข้าสู่ระบบ</button>
+          <button type="button" aria-pressed={mode === 'signup'} onclick={() => { mode = 'signup'; error = ''; message = ''; }}>สร้างบัญชี</button>
+        </div>
+      {/if}
       <form onsubmit={submit}>
         {#if mode === 'signup'}
           <label for="name">ชื่อที่แสดง</label>
@@ -106,16 +112,12 @@
           {busy ? 'กำลังดำเนินการ…' : mode === 'signup' ? 'สร้างบัญชี' : mode === 'confirm' ? 'ยืนยันอีเมล' : 'เข้าสู่ระบบ'}
         </button>
       </form>
-      <div class="auth-switch">
-        {#if mode === 'confirm'}
+      {#if mode === 'confirm'}
+        <div class="auth-switch">
           <button type="button" disabled={busy} onclick={resendCode}>ส่งรหัสอีกครั้ง</button>
-        {/if}
-        {#if mode === 'login'}
-          <button type="button" onclick={() => { mode = 'signup'; error = ''; message = ''; }}>สร้างบัญชีใหม่</button>
-        {:else}
           <button type="button" onclick={() => { mode = 'login'; password = ''; error = ''; message = ''; }}>กลับไปเข้าสู่ระบบ</button>
-        {/if}
-      </div>
+        </div>
+      {/if}
 
       {#if localDemo}
         <details class="local-demo">
@@ -133,10 +135,14 @@
   <aside class="preview" aria-hidden="true">
     <div class="preview-inner">
       <p class="preview-title">คุยเรื่องงาน<br />นัดเจอเพื่อน</p>
-      <div class="sample-chat">
+      <div class="sample-window">
+        <div class="sample-rail"><BrandMark size={28} /><span>พ</span><span>#</span></div>
+        <div class="sample-chat">
         <div class="sample-header"><span class="sample-avatar">พ</span> นัดกินข้าว</div>
         <p class="sample-incoming">เย็นนี้เจอกันกี่โมงดี?</p>
         <p class="sample-outgoing">หกโมงที่ร้านเดิมนะ</p>
+        <div class="sample-composer">พิมพ์ข้อความ… <span>↑</span></div>
+        </div>
       </div>
     </div>
   </aside>
@@ -174,7 +180,7 @@
   form { display: grid; gap: 10px; }
   label { font-size: 14px; font-weight: 600; }
   input { width: 100%; min-height: 48px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); color: var(--text-primary); font: inherit; }
-  input:focus-visible, button:focus-visible { outline: 3px solid #76bfa8; outline-offset: 2px; }
+  input:focus-visible, button:focus-visible { outline: 3px solid var(--brand-accent); outline-offset: 2px; }
   .sign-in-link { width: 100%; border: 0; cursor: pointer; justify-content: center; font-family: inherit; }
   .sign-in-link:disabled { opacity: .65; cursor: wait; }
   .hint, .notice { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
@@ -187,15 +193,15 @@
   .demo-accounts { display: flex; gap: 8px; margin-top: 10px; }
   .demo-accounts button { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); color: var(--text-primary); cursor: pointer; }
 
-  .preview { background: #143c31; color: #f6f6eb; }
+  .preview { background: var(--palette-sky); color: var(--palette-ink); }
   .preview-inner { width: min(100%, 376px); }
   .preview-title { font-size: clamp(32px, 4vw, 54px); font-weight: 700; line-height: 1.3; margin-bottom: 32px; }
-  .sample-chat { display: grid; gap: 12px; padding: 18px; border: 1px solid #56756a; border-radius: 14px; background: #20483c; font-size: 14px; }
-  .sample-header { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid #56756a; font-weight: 600; }
-  .sample-avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #f0ddba; color: #3f392c; }
+  .sample-chat { display: grid; gap: 12px; padding: 18px; background: var(--palette-cream); font-size: 14px; }
+  .sample-header { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid #b7cddd; font-weight: 600; }
+  .sample-avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--palette-peach); }
   .sample-incoming, .sample-outgoing { padding: 8px 12px; border-radius: 10px; }
-  .sample-incoming { justify-self: start; background: #385e52; }
-  .sample-outgoing { justify-self: end; background: #d8ebdb; color: #193b31; }
+  .sample-incoming { justify-self: start; background: #ffffff; }
+  .sample-outgoing { justify-self: end; background: var(--palette-blue); color: var(--bubble-out-text); }
 
 
   @media (prefers-reduced-motion: no-preference) {
@@ -220,4 +226,36 @@
     .login { grid-template-columns: minmax(0, 1fr); }
     .preview { display: none; }
   }
+  .sign-in { background: var(--bg-app); }
+  .signup .sign-in, .signup .preview {
+    padding: clamp(8px, 2dvh, 24px) clamp(12px, 4vw, 32px);
+  }
+  .sign-in-inner { width: min(100%, 440px); padding: clamp(24px, 4vw, 40px); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 24px; box-shadow: 0 24px 70px #22271a14; }
+  .signup .sign-in-inner {
+    width: min(100%, 520px);
+    padding: clamp(14px, 3dvh, 28px) clamp(16px, 4vw, 32px);
+  }
+  .signup .wordmark { margin-bottom: 8px; }
+  .signup h1 { font-size: clamp(26px, 5dvh, 34px); }
+  .signup .intro { margin: 4px 0 10px; }
+  .signup .auth-mode { margin-bottom: 10px; }
+  .signup form { gap: 5px; }
+  .signup input { min-height: 42px; padding-block: 6px; margin-bottom: 2px; }
+  .signup .sign-in-link { min-height: 44px; margin-top: 4px; }
+
+  @media (max-height: 560px) {
+    .signup .wordmark, .signup .intro { display: none; }
+    .signup h1 { margin-bottom: 8px; }
+  }
+  .wordmark { margin-bottom: 32px; }
+  input, .sign-in-link { border-radius: 12px; }
+  .auth-mode { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; gap: 3px; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-input); }
+  .auth-mode button { padding: 8px 4px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+  .auth-mode button[aria-pressed="true"] { border-color: var(--border); background: var(--bg-surface); color: var(--text-primary); font-weight: 600; }
+  .sample-window { display: grid; grid-template-columns: auto minmax(0, 1fr); border: 1px solid #b7cddd; border-radius: 20px; background: #dcebf6; overflow: hidden; box-shadow: 0 24px 60px #1d324426; }
+  .sample-rail { display: flex; flex-direction: column; gap: 12px; padding: 14px 9px; }
+  .sample-rail span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--palette-peach); }
+  .sample-chat { border: 0; border-left: 1px solid #b7cddd; border-radius: 0; box-shadow: none; }
+  .sample-composer { display: flex; justify-content: space-between; align-items: center; gap: 4px; padding: 5px 8px; margin-top: 6px; border: 1px solid #b7cddd; border-radius: 9px; }
+  .sample-composer span { padding: 2px 7px; border-radius: 6px; background: #dcebf6; }
 </style>

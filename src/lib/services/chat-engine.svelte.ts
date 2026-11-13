@@ -38,6 +38,8 @@ export interface LogEntry {
 }
 
 export class ChatEngine {
+  isUiPreview = $state(false);
+
   // Reactive State (Svelte 5 Runes)
   session: SessionInfo | null = $state(null);
   devUsers: UserSummary[] = $state([]);
@@ -128,6 +130,37 @@ export class ChatEngine {
    * restores pending outbox sends, and sets up sync timers.
    */
   public async initialize(): Promise<void> {
+    if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('preview') === '1') {
+      this.isUiPreview = true;
+      const user = { user_id: 'preview-user', display_name: 'Demo A' };
+      const peer = { user_id: 'preview-peer', display_name: 'Demo B' };
+      this.session = {
+        user,
+        session: { expires_at: '', idle_expires_at: '' },
+        csrf_token: ''
+      };
+      this.rooms = [
+        { room_id: 'preview-dm', kind: 'dm', title: peer.display_name, membership_role: 'member', last_seq: '2' },
+        { room_id: 'preview-group', kind: 'group', title: 'Project Chat', membership_role: 'owner', last_seq: '0' }
+      ];
+      this.activeRoomId = 'preview-dm';
+      this.messagesByRoom['preview-dm'] = [
+        {
+          message_id: 'preview-1', room_id: 'preview-dm', seq: '1', sender: peer,
+          client_message_id: 'preview-1', text: 'Hey! Welcome to the chat preview.',
+          created_at: new Date().toISOString()
+        },
+        {
+          message_id: 'preview-2', room_id: 'preview-dm', seq: '2', sender: user,
+          client_message_id: 'preview-2', text: 'Thanks! I can see the conversation.',
+          created_at: new Date().toISOString()
+        }
+      ];
+      this.cursorByRoom['preview-dm'] = '2';
+      this.authLoading = false;
+      return;
+    }
+
     this.authLoading = true;
     this.authError = null;
     this.setupNotificationSound();
@@ -303,6 +336,7 @@ export class ChatEngine {
   public async selectRoom(roomId: string): Promise<void> {
     if (!this.session) return;
     this.activeRoomId = roomId;
+    if (this.isUiPreview) return;
 
     const userId = this.session.user.user_id;
 
@@ -512,6 +546,23 @@ export class ChatEngine {
 
     // 2. Generate client_message_id (UUID v4)
     const clientMessageId = generateUuid();
+
+    if (this.isUiPreview) {
+      const seq = (parseSeq(this.activeCursor) + 1n).toString();
+      this.messagesByRoom[roomId] = [...this.activeMessages, {
+        message_id: clientMessageId,
+        room_id: roomId,
+        seq,
+        sender: this.session.user,
+        client_message_id: clientMessageId,
+        text,
+        created_at: new Date().toISOString()
+      }];
+      this.cursorByRoom[roomId] = seq;
+      const room = this.activeRoom;
+      if (room) room.last_seq = seq;
+      return;
+    }
 
     // 3. Record pending send before initiating HTTP request
     const pendingItem: PendingMessage = {
