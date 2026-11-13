@@ -251,7 +251,7 @@
   .search input { min-height: 44px; }
   .rooms { padding: 0 12px 16px; }
   .room-item { padding: 12px; border-radius: 13px; }
-  .room-avatar { width: 44px; height: 44px; border-radius: 15px; background: var(--palette-sky); color: var(--palette-ink); }
+  .room-avatar { width: 44px; height: 44px; border-radius: 15px; background: var(--palette-lavender); color: var(--palette-ink); }
   .room-avatar.group { background: var(--group-bg); color: var(--group-text); }
   footer { padding: 12px; }
   summary { border: 1px solid var(--border); border-radius: 14px; padding: 10px; }
