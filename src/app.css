@@ -33,61 +33,61 @@
     color-scheme: light;
   }
 
-  --palette-peach: #f4baa3;
-  --palette-cream: #f4f0e2;
-  --palette-sky: #a6c8e2;
-  --palette-blue: #619dc6;
-  --palette-ink: #1d3244;
+  --palette-peach: #e8e2ff;
+  --palette-cream: #f4f4f4;
+  --palette-sky: #ebe7fa;
+  --palette-blue: #5b3cc4;
+  --palette-ink: #171717;
 
   /* Shared surface and text colors */
   --bg-app-light: var(--palette-cream);
-  --bg-app-dark: #151e29;
+  --bg-app-dark: #101010;
 
-  --bg-surface-light: #fffdf7;
-  --bg-surface-dark: #1d2937;
+  --bg-surface-light: #ffffff;
+  --bg-surface-dark: #191919;
 
-  --bg-sidebar-light: #fffdf7;
-  --bg-sidebar-dark: #1d2937;
+  --bg-sidebar-light: #ffffff;
+  --bg-sidebar-dark: #191919;
 
   --bg-input-light: var(--palette-cream);
-  --bg-input-dark: #273647;
+  --bg-input-dark: #262626;
 
-  --border-light: #dfd9cb;
-  --border-dark: #3c4d5f;
+  --border-light: #dedede;
+  --border-dark: #393939;
 
   --text-primary-light: var(--palette-ink);
-  --text-primary-dark: #edf5fc;
+  --text-primary-dark: #f5f5f5;
 
-  --text-secondary-light: #546375;
-  --text-secondary-dark: #b4c4d4;
+  --text-secondary-light: #606060;
+  --text-secondary-dark: #bdbdbd;
 
-  --text-tertiary-light: #596a7c;
-  --text-tertiary-dark: #a8bbcd;
+  --text-tertiary-light: #666666;
+  --text-tertiary-dark: #b0b0b0;
 
   --bubble-in-bg-light: var(--palette-cream);
-  --bubble-in-bg-dark: #27384a;
+  --bubble-in-bg-dark: #292929;
 
   --bubble-in-text-light: var(--palette-ink);
-  --bubble-in-text-dark: #edf5fc;
+  --bubble-in-text-dark: #f5f5f5;
 
-  --item-hover-light: #edf4fa;
-  --item-hover-dark: #2a3c4e;
+  --item-hover-light: #f3f3f3;
+  --item-hover-dark: #292929;
 
-  --item-active-light: #e0edf7;
-  --item-active-dark: #2d4255;
+  --item-active-light: #eeeafa;
+  --item-active-dark: #302943;
 
-  --scrollbar-thumb-light: #bcc0c4;
-  --scrollbar-thumb-dark: #4e4f50;
+  --scrollbar-thumb-light: #bcbcbc;
+  --scrollbar-thumb-dark: #555555;
 
-  --brand-fill: #2d5f82;
-  --brand-fill-hover: #224b69;
-  --brand-accent: light-dark(#2d5f82, var(--palette-sky));
-  --group-bg: light-dark(var(--palette-peach), #503b39);
-  --group-text: light-dark(#59382e, var(--palette-peach));
+  --brand-fill: #5b3cc4;
+  --brand-fill-hover: #49309e;
+  --brand-accent: light-dark(#5b3cc4, #c5b7ff);
+  --group-bg: light-dark(var(--palette-peach), #302943);
+  --group-text: light-dark(#49309e, #d8ceff);
   --brand-blue: var(--brand-accent);
   --brand-blue-hover: var(--brand-fill-hover);
   --bubble-out-bg: var(--palette-blue);
-  --bubble-out-text: #142737;
+  --bubble-out-text: #ffffff;
 
   --status-green: #31a24c;
   --status-yellow: #f5a623;
