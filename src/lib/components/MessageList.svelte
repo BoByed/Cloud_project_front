@@ -167,7 +167,9 @@
 
           <!-- Plain Text Bubble (No HTML interpretation) -->
           <div class="bubble" class:image-bubble={Boolean(msg.image)}>
-            {#if msg.image}<ChatImage url={msg.image.url} description={msg.text} />{/if}
+            {#if msg.image}
+              <ChatImage url={msg.image.url} description={msg.text} width={msg.image.width} height={msg.image.height} />
+            {/if}
             {#if msg.text}<span class="bubble-text">{msg.text}</span>{/if}
           </div>
 

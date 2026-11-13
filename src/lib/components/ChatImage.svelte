@@ -2,7 +2,15 @@
   import { onMount } from 'svelte';
   import { httpClient } from '../services/http-client.js';
 
-  let { url, description }: { url: string; description: string } = $props();
+  let { url, description, width, height }: {
+    url: string;
+    description: string;
+    width: number;
+    height: number;
+  } = $props();
+  let imageWidth = $derived(width > 0 && height > 0 ? width : 240);
+  let imageHeight = $derived(width > 0 && height > 0 ? height : 180);
+  let thumbnailWidth = $derived(Math.min(imageWidth, 240, 240 * imageWidth / imageHeight));
   let objectUrl = $state<string | null>(null);
   let failed = $state(false);
   let dialog = $state<HTMLDialogElement>();
@@ -29,10 +37,19 @@
   });
 </script>
 
+<div class="image-frame" style:width={thumbnailWidth + 'px'} style:aspect-ratio={imageWidth + ' / ' + imageHeight}>
+  {#if objectUrl}
+    <button class="image-preview" type="button" onclick={() => dialog?.showModal()} aria-label="เปิดรูปขนาดใหญ่">
+      <img src={objectUrl} alt={description || 'รูปภาพในแชท'} />
+    </button>
+  {:else if failed}
+    <button class="image-retry" type="button" onclick={load} aria-label="โหลดรูปไม่สำเร็จ ลองโหลดอีกครั้ง" title="ลองโหลดอีกครั้ง">↻</button>
+  {:else}
+    <span class="image-loading" role="status" aria-label="กำลังโหลดรูป">…</span>
+  {/if}
+</div>
+
 {#if objectUrl}
-  <button class="image-preview" type="button" onclick={() => dialog?.showModal()} aria-label="เปิดรูปขนาดใหญ่">
-    <img src={objectUrl} alt={description || 'รูปภาพในแชท'} />
-  </button>
   <dialog class="image-viewer" bind:this={dialog} aria-label="รูปภาพในแชท">
     <button class="close-viewer" type="button" onclick={() => dialog?.close()} aria-label="ปิดรูปภาพ">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
@@ -41,25 +58,37 @@
     </button>
     <img class="full-image" src={objectUrl} alt={description || 'รูปภาพในแชท'} />
   </dialog>
-{:else if failed}
-  <span>โหลดรูปไม่สำเร็จ</span><button type="button" onclick={load}>ลองโหลดอีกครั้ง</button>
-{:else}
-  <span>กำลังโหลดรูป...</span>
 {/if}
 
 
 <style>
-  .image-preview {
-    display: block;
-    max-width: min(240px, 100%);
+  .image-frame {
+    position: relative;
+    max-width: 100%;
+    min-width: min(32px, 100%);
+    min-height: 32px;
+    border-radius: 8px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+  }
+
+  .image-preview, .image-retry, .image-loading {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
     padding: 0;
     overflow: hidden;
     border: 0;
     border-radius: 8px;
     background: transparent;
-    cursor: zoom-in;
+    color: inherit;
   }
-  .image-preview img { display: block; max-width: 100%; max-height: 240px; object-fit: contain; }
+  .image-preview { cursor: zoom-in; }
+  .image-retry { cursor: pointer; font-size: 18px; }
+  .image-preview img { display: block; width: 100%; height: 100%; object-fit: contain; }
 
   .image-viewer {
     position: fixed;
