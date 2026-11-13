@@ -193,15 +193,15 @@
   .demo-accounts { display: flex; gap: 8px; margin-top: 10px; }
   .demo-accounts button { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); color: var(--text-primary); cursor: pointer; }
 
-  .preview { background: var(--palette-sky); color: var(--palette-ink); }
+  .preview { background: var(--palette-lavender); color: var(--palette-ink); }
   .preview-inner { width: min(100%, 376px); }
   .preview-title { font-size: clamp(32px, 4vw, 54px); font-weight: 700; line-height: 1.3; margin-bottom: 32px; }
-  .sample-chat { display: grid; gap: 12px; padding: 18px; background: var(--palette-cream); font-size: 14px; }
-  .sample-header { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid #b7cddd; font-weight: 600; }
-  .sample-avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--palette-peach); }
+  .sample-chat { display: grid; gap: 12px; padding: 18px; background: var(--palette-ivory); font-size: 14px; }
+  .sample-header { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid #ccbee2; font-weight: 600; }
+  .sample-avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--palette-mint); }
   .sample-incoming, .sample-outgoing { padding: 8px 12px; border-radius: 10px; }
   .sample-incoming { justify-self: start; background: #ffffff; }
-  .sample-outgoing { justify-self: end; background: var(--palette-blue); color: var(--bubble-out-text); }
+  .sample-outgoing { justify-self: end; background: var(--palette-orchid); color: var(--bubble-out-text); }
 
 
   @media (prefers-reduced-motion: no-preference) {
@@ -252,10 +252,10 @@
   .auth-mode { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; gap: 3px; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-input); }
   .auth-mode button { padding: 8px 4px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-secondary); cursor: pointer; }
   .auth-mode button[aria-pressed="true"] { border-color: var(--border); background: var(--bg-surface); color: var(--text-primary); font-weight: 600; }
-  .sample-window { display: grid; grid-template-columns: auto minmax(0, 1fr); border: 1px solid #b7cddd; border-radius: 20px; background: #dcebf6; overflow: hidden; box-shadow: 0 24px 60px #1d324426; }
+  .sample-window { display: grid; grid-template-columns: auto minmax(0, 1fr); border: 1px solid #ccbee2; border-radius: 20px; background: #ebe3f7; overflow: hidden; box-shadow: 0 24px 60px #29213926; }
   .sample-rail { display: flex; flex-direction: column; gap: 12px; padding: 14px 9px; }
-  .sample-rail span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--palette-peach); }
-  .sample-chat { border: 0; border-left: 1px solid #b7cddd; border-radius: 0; box-shadow: none; }
-  .sample-composer { display: flex; justify-content: space-between; align-items: center; gap: 4px; padding: 5px 8px; margin-top: 6px; border: 1px solid #b7cddd; border-radius: 9px; }
-  .sample-composer span { padding: 2px 7px; border-radius: 6px; background: #dcebf6; }
+  .sample-rail span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--palette-mint); }
+  .sample-chat { border: 0; border-left: 1px solid #ccbee2; border-radius: 0; box-shadow: none; }
+  .sample-composer { display: flex; justify-content: space-between; align-items: center; gap: 4px; padding: 5px 8px; margin-top: 6px; border: 1px solid #ccbee2; border-radius: 9px; }
+  .sample-composer span { padding: 2px 7px; border-radius: 6px; background: #ebe3f7; }
 </style>
