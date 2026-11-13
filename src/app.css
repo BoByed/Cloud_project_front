@@ -58,9 +58,9 @@
   --scrollbar-thumb-dark: #4e4f50;
 
   /* Universal Brand Tokens */
-  --brand-blue: #0084ff;
-  --brand-blue-hover: #0073e6;
-  --brand-gradient: linear-gradient(135deg, #0084ff 0%, #0099ff 50%, #a033ff 100%);
+  --brand-blue: #0866ff;
+  --brand-blue-hover: #0055d4;
+  --brand-gradient: #0866ff;
   --bubble-out-text: #ffffff;
 
   --status-green: #31a24c;
